@@ -71,6 +71,7 @@ XR Origin (XR Rig)
 ```
 
 5. Expand **Right Controller**. You should see interactors from the sample, including **Near-Far Interactor** (XRIT 3’s grab/ray combo; older docs said “Direct / Ray”).
+   - For near-only grab (no long-range ray grab): on **Near-Far Interactor**, disable **Enable Far Casting** (this project’s Starter Assets prefabs already have it off).
 6. Hierarchy → **XR → Interaction Manager** if the scene does not already have one (Starter Assets often expects it).
 7. **Project Settings → XR Plug-in Management → Android**: OpenXR enabled, with Meta Quest support / Meta feature group as you already use.
 
@@ -84,30 +85,24 @@ XR Origin (XR Rig)
 1. Create empty GameObject: `ElbowTorqueSystem`.
 2. Add component **`ElbowTorqueOutput`**.
 3. Leave **Torque Label** empty and keep **Auto Create Head Locked Hud** enabled (default).
-   - At runtime a HUD appears in front of the headset: `Elbow Torque: X.X Nm`.
-   - Optional: assign your own world-space text label instead; that disables the need for auto HUD.
+   - At runtime a head-locked panel appears in view: `Torque: X.X Nm` / `Mass: Y.Y kg`.
+   - Optional: assign your own TMP label instead to skip the auto HUD.
 4. Set **Torque Per Kg** (e.g. `0.5` → 10 kg box ⇒ `5.0 Nm`).
 5. Set **Log Interval Seconds** to `0.25` (or `0` for every frame).
 
 No brace hardware is required for this MVP: VR grab alone drives Console + HUD torque.
 
-### 3. Create 4 grabbable boxes
+### 3. Create grabbable dumbbells
 
-For each mass (1, 3, 5, 10 kg):
+For each mass (1, 3, 10 kg in the current scene):
 
-1. **3D Object → Cube**, name e.g. `Box_1kg`, `Box_3kg`, …
-2. Scale / color them differently so they are easy to tell apart.
-3. Add **`Rigidbody`**:
-   - Use Gravity: on
-   - Mass: match the box (1 / 3 / 5 / 10) — also set on `BoxMass`
-4. Add **`Box Collider`** (default cube already has one).
-5. Add **`XRGrabInteractable`** (XR Interaction Toolkit):
-   - Interaction Layer Mask: Default (or your grab layer)
-   - Movement Type: Instantaneous or Velocity Tracking
-6. Add **`BoxMass`**:
-   - **Mass Kg**: `1` / `3` / `5` / `10`
-   - **Sync Rigidbody Mass**: enabled
-7. Place boxes on a table / floor within reach of the right hand.
+1. Create an empty or cube GameObject, name e.g. `Dumbbell_1kg`, …
+2. Add **`Rigidbody`** (gravity on; mass matches kg).
+3. Add **`Box Collider`** (resized at runtime by `DumbbellVisual`).
+4. Add **`XRGrabInteractable`**.
+5. Add **`BoxMass`** (`Mass Kg` = 1 / 3 / 10, sync Rigidbody on).
+6. Add **`DumbbellVisual`** — builds handle + weight plates from primitives; plate size/color scales with mass.
+7. Place them on a table within near-grab reach of the right hand.
 
 ### 4a. Wire right-hand grab (automatic — preferred)
 
@@ -130,11 +125,13 @@ If you are not using XRIT interactors (e.g. Meta grab only):
 ### 5. Build & run on Quest 3
 
 1. **File → Build Settings → Android**, platform Switch if needed.
-2. Run in Editor with Quest Link / Meta XR Simulator, or **Build and Run** to the headset.
+2. Run in Editor with Quest Link / Meta XR Simulator (Windows), or **Build and Run** to the headset.
 3. Grab a box with the **right** controller:
    - Console: `[ElbowTorque] 5.000 Nm (mass=10.0 kg)` (example)
    - Label: `Elbow Torque: 5.0 Nm`
 4. Release: torque / label go to `0.0 Nm`.
+
+**Linux:** Quest Link is not available. See [`LINUX_QUEST3_DEPLOY.md`](LINUX_QUEST3_DEPLOY.md) for APK build + `adb install`.
 
 ---
 
@@ -181,6 +178,6 @@ Public API for other scripts:
 - [ ] Unity 6 project; XRIT Starter Assets imported
 - [ ] Scene uses **XR Origin (XR Rig)** prefab (not bare XR Origin (VR)) — Right Controller present
 - [ ] `ElbowTorqueOutput` in scene (auto HUD on, or your own label assigned)
-- [ ] 4 cubes: Rigidbody + XRGrabInteractable + BoxMass (1/3/5/10)
+- [ ] Dumbbells: Rigidbody + XRGrabInteractable + BoxMass + DumbbellVisual (1/3/10)
 - [ ] `RightHandGrabTorqueBridge` on Right Controller’s **Near-Far Interactor**
 - [ ] Grab right-handed → Console + HUD show non-zero torque; release → 0

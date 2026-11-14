@@ -1,4 +1,3 @@
-using TMPro;
 using UnityEngine;
 
 /// <summary>
@@ -15,17 +14,17 @@ public class ElbowTorqueOutput : MonoBehaviour
     public float torquePerKg = 0.5f;
 
     [Header("Display")]
-    [Tooltip("Optional. If empty and Auto Create Head Locked Hud is on, a HUD is created at runtime.")]
-    public TMP_Text torqueLabel;
-
-    [Tooltip("If no Torque Label is assigned, create a head-locked TextMeshPro HUD in front of the XR camera.")]
+    [Tooltip("If enabled, create a head-locked TextMesh HUD in front of the XR camera.")]
     public bool autoCreateHeadLockedHud = true;
 
     [Tooltip("Meters in front of the camera for the auto HUD.")]
-    public float hudDistanceMeters = 1.2f;
+    public float hudDistanceMeters = 0.75f;
 
-    [Tooltip("Local offset from camera look direction (meters).")]
-    public Vector3 hudLocalOffset = new Vector3(0f, -0.15f, 0f);
+    [Tooltip("Local offset from camera (meters). Negative X = left, positive Y = up.")]
+    public Vector3 hudLocalOffset = new Vector3(-0.18f, 0.1f, 0f);
+
+    [Tooltip("If text looks mirrored, toggle this.")]
+    public bool flipHudText = true;
 
     [Tooltip("How often to Debug.Log torque (seconds). 0 = every frame.")]
     [Min(0f)]
@@ -37,7 +36,10 @@ public class ElbowTorqueOutput : MonoBehaviour
 
     float _logTimer;
     Transform _hudRoot;
+    Transform _labelTransform;
+    TextMesh _hudText;
     Camera _hudCamera;
+    bool _hudParentedToCamera;
 
     /// <summary>Current commanded elbow torque in Newton-metres.</summary>
     public float CurrentTorqueNm => currentTorqueNm;
@@ -55,7 +57,7 @@ public class ElbowTorqueOutput : MonoBehaviour
 
         Instance = this;
 
-        if (torqueLabel == null && autoCreateHeadLockedHud)
+        if (autoCreateHeadLockedHud)
             CreateHeadLockedHud();
     }
 
@@ -63,43 +65,36 @@ public class ElbowTorqueOutput : MonoBehaviour
     {
         if (Instance == this)
             Instance = null;
+
+        if (_hudRoot != null)
+            Destroy(_hudRoot.gameObject);
     }
 
     void LateUpdate()
     {
-        // Keep auto HUD locked to the headset view.
-        if (_hudRoot != null)
-        {
-            if (_hudCamera == null)
-                _hudCamera = ResolveXrCamera();
+        AttachHudToCameraIfNeeded();
+        ApplyFacing();
 
-            if (_hudCamera != null)
-            {
-                var cam = _hudCamera.transform;
-                _hudRoot.position = cam.position
-                    + cam.forward * hudDistanceMeters
-                    + cam.up * hudLocalOffset.y
-                    + cam.right * hudLocalOffset.x;
-                _hudRoot.rotation = Quaternion.LookRotation(cam.forward, cam.up);
-            }
+        if (_hudRoot != null && !_hudParentedToCamera && _hudCamera != null)
+        {
+            var cam = _hudCamera.transform;
+            _hudRoot.position = cam.position
+                + cam.forward * hudDistanceMeters
+                + cam.up * hudLocalOffset.y
+                + cam.right * hudLocalOffset.x;
+            // Root faces same way as camera; label flip makes glyphs readable to the wearer.
+            _hudRoot.rotation = Quaternion.LookRotation(cam.forward, cam.up);
         }
 
-        // torque = mass * torquePerKg  (add sin(theta) later if needed)
         currentTorqueNm = heldMassKg * torquePerKg;
         PublishTorque(currentTorqueNm);
     }
 
-    /// <summary>
-    /// Call when the right hand starts holding a box (or mass changes).
-    /// </summary>
     public void SetHeldMass(float massKg)
     {
         heldMassKg = Mathf.Max(0f, massKg);
     }
 
-    /// <summary>
-    /// Call when the right hand releases / holds nothing.
-    /// </summary>
     public void ClearHeld()
     {
         heldMassKg = 0f;
@@ -107,23 +102,21 @@ public class ElbowTorqueOutput : MonoBehaviour
 
     /// <summary>
     /// HOOK FOR HARDWARE: swap the body of this method for a network send to the brace.
-    /// Called every frame with the latest torque (Nm).
     /// </summary>
     void PublishTorque(float torqueNm)
     {
         UpdateLabel(torqueNm);
         MaybeLog(torqueNm);
 
-        // TODO: replace Debug.Log / UI with brace network send, e.g.:
-        // BraceClient.SendElbowTorque(torqueNm);
+        // TODO: BraceClient.SendElbowTorque(torqueNm);
     }
 
     void UpdateLabel(float torqueNm)
     {
-        if (torqueLabel == null)
+        if (_hudText == null)
             return;
 
-        torqueLabel.text = $"Elbow Torque: {torqueNm:F1} Nm";
+        _hudText.text = $"Torque: {torqueNm:F1} Nm\nMass: {heldMassKg:F1} kg";
     }
 
     void MaybeLog(float torqueNm)
@@ -144,29 +137,85 @@ public class ElbowTorqueOutput : MonoBehaviour
 
     void CreateHeadLockedHud()
     {
-        _hudCamera = ResolveXrCamera();
+        try
+        {
+            var root = new GameObject("ElbowTorqueHUD");
+            _hudRoot = root.transform;
 
-        var root = new GameObject("ElbowTorqueHUD");
-        _hudRoot = root.transform;
+            var bg = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            bg.name = "Background";
+            bg.transform.SetParent(_hudRoot, false);
+            bg.transform.localPosition = new Vector3(0f, 0f, 0.01f);
+            bg.transform.localScale = new Vector3(0.42f, 0.16f, 1f);
+            Object.Destroy(bg.GetComponent<Collider>());
+            bg.GetComponent<MeshRenderer>().material.color = Color.black;
 
-        var tmpGo = new GameObject("TorqueLabel");
-        tmpGo.transform.SetParent(_hudRoot, false);
-        tmpGo.transform.localPosition = Vector3.zero;
-        // Face the wearer (TMP forward is +Z; billboard toward camera means flip 180).
-        tmpGo.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+            var labelGo = new GameObject("TorqueLabel");
+            _labelTransform = labelGo.transform;
+            _labelTransform.SetParent(_hudRoot, false);
+            _labelTransform.localPosition = Vector3.zero;
 
-        var tmp = tmpGo.AddComponent<TextMeshPro>();
-        tmp.text = "Elbow Torque: 0.0 Nm";
-        tmp.fontSize = 2.5f;
-        tmp.alignment = TextAlignmentOptions.Center;
-        tmp.color = Color.white;
-        tmp.textWrappingMode = TextWrappingModes.NoWrap;
+            _hudText = labelGo.AddComponent<TextMesh>();
+            _hudText.text = "Torque: 0.0 Nm\nMass: 0.0 kg";
+            _hudText.fontSize = 42;
+            _hudText.characterSize = 0.01f;
+            _hudText.anchor = TextAnchor.MiddleCenter;
+            _hudText.alignment = TextAlignment.Center;
+            _hudText.color = Color.white;
+            _hudText.fontStyle = FontStyle.Bold;
 
-        // Reasonable default bounds so glyphs aren't clipped.
-        tmp.rectTransform.sizeDelta = new Vector2(2.5f, 0.5f);
+            var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            if (font == null)
+                font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            if (font != null)
+                _hudText.font = font;
 
-        torqueLabel = tmp;
-        Debug.Log("[ElbowTorque] Auto-created head-locked HUD (no Torque Label was assigned).");
+            ApplyFacing();
+            AttachHudToCameraIfNeeded();
+            Debug.Log("[ElbowTorque] Auto-created head-locked TextMesh torque HUD.");
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"[ElbowTorque] Failed to create HUD: {e}");
+            _hudRoot = null;
+            _hudText = null;
+            _labelTransform = null;
+        }
+    }
+
+    void ApplyFacing()
+    {
+        if (_labelTransform == null)
+            return;
+
+        // TextMesh faces +Z. With the HUD root aligned to the camera forward, a 180° yaw
+        // turns the glyphs toward the wearer. flipHudText toggles if a build still looks mirrored.
+        float yaw = flipHudText ? 180f : 0f;
+        _labelTransform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+        _labelTransform.localScale = Vector3.one;
+
+        var bg = _hudRoot != null ? _hudRoot.Find("Background") : null;
+        if (bg != null)
+            bg.localRotation = Quaternion.Euler(0f, yaw, 0f);
+    }
+
+    void AttachHudToCameraIfNeeded()
+    {
+        if (_hudRoot == null || _hudParentedToCamera)
+            return;
+
+        if (_hudCamera == null)
+            _hudCamera = ResolveXrCamera();
+
+        if (_hudCamera == null)
+            return;
+
+        _hudRoot.SetParent(_hudCamera.transform, false);
+        _hudRoot.localPosition = new Vector3(hudLocalOffset.x, hudLocalOffset.y, hudDistanceMeters);
+        _hudRoot.localRotation = Quaternion.identity;
+        _hudRoot.localScale = Vector3.one;
+        _hudParentedToCamera = true;
+        Debug.Log($"[ElbowTorque] HUD attached to camera '{_hudCamera.name}'.");
     }
 
     static Camera ResolveXrCamera()
