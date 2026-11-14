@@ -32,9 +32,10 @@ torqueNm = massKg * torquePerKg
 | [`Docs/QUEST3_TORQUE_MVP_SETUP.md`](Docs/QUEST3_TORQUE_MVP_SETUP.md) | Packages, Editor wiring, Quest build checklist |
 | [`Docs/LINUX_QUEST3_DEPLOY.md`](Docs/LINUX_QUEST3_DEPLOY.md) | Build APK on Linux and install/run on Quest 3 via adb |
 | [`arduino/TorquePrint/`](arduino/TorquePrint/) | UNO Q sketch: HC-06 on `Serial1` → print torque via `Monitor` |
-| [`Docs/QUEST3_HC06_TORQUE.md`](Docs/QUEST3_HC06_TORQUE.md) | Quest → HC-06 → UNO Q wiring, CLI upload, App Lab monitor |
+| [`Assets/Scripts/Brace/`](Assets/Scripts/Brace/) | Quest Bluetooth Classic SPP client (`BraceBluetoothClient`) |
+| [`Docs/QUEST3_HC06_TORQUE.md`](Docs/QUEST3_HC06_TORQUE.md) | Pair HC-06 on Quest, wire Unity, build APK, verify prints |
 
-**Brace integration hook:** `ElbowTorqueOutput.PublishTorque(float torqueNm)` — replace the Debug.Log / UI path with a Bluetooth SPP send to the HC-06 when the Unity client is ready.
+**Brace path:** `ElbowTorqueOutput.PublishTorque` → `BraceBluetoothClient.SendTorque` → HC-06 → UNO Q. See the HC-06 doc for Quest pairing and scene setup.
 
 ## Status
 

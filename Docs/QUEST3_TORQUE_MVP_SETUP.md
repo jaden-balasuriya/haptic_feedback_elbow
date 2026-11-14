@@ -30,11 +30,11 @@ Already in this repo under `Assets/Scripts/ElbowTorque/`:
 | Script | Role |
 |--------|------|
 | `BoxMass.cs` | Mass (kg) on each cube; syncs `Rigidbody.mass`. |
-| `ElbowTorqueOutput.cs` | **Single torque owner** — UI + `Debug.Log` + future brace send. |
+| `ElbowTorqueOutput.cs` | **Single torque owner** — UI + `Debug.Log` + HC-06 send via `BraceBluetoothClient`. |
 | `RightHandGrabTorqueBridge.cs` | Listens to right-hand XR grab → drives torque. |
 | `BoxGrabTorqueEvents.cs` | Optional Inspector UnityEvent hooks (alternative to the bridge). |
 
-**Hardware hook:** open `ElbowTorqueOutput.PublishTorque()` — that is the one method to replace with a network send.
+**Hardware:** add `BraceBluetoothClient` on `ElbowTorqueSystem` and follow [`QUEST3_HC06_TORQUE.md`](QUEST3_HC06_TORQUE.md) to pair the HC-06 on Quest.
 
 ---
 
@@ -89,8 +89,9 @@ XR Origin (XR Rig)
    - Optional: assign your own TMP label instead to skip the auto HUD.
 4. Set **Torque Per Kg** (e.g. `0.5` → 10 kg box ⇒ `5.0 Nm`).
 5. Set **Log Interval Seconds** to `0.25` (or `0` for every frame).
+6. **Brace Bluetooth:** Add **`BraceBluetoothClient`** on the same GameObject and assign it on `ElbowTorqueOutput` (already done in `SampleScene`). See [`QUEST3_HC06_TORQUE.md`](QUEST3_HC06_TORQUE.md).
 
-No brace hardware is required for this MVP: VR grab alone drives Console + HUD torque.
+No brace hardware is required for the VR MVP: grab alone drives Console + HUD torque. Bluetooth send only runs on a Quest APK.
 
 ### 3. Create grabbable dumbbells
 
@@ -153,17 +154,7 @@ currentTorqueNm = heldMassKg * torquePerKg * Mathf.Sin(elbowAngleRad);
 
 ## Finding the brace send hook
 
-In `ElbowTorqueOutput.cs`:
-
-```csharp
-void PublishTorque(float torqueNm)
-{
-    UpdateLabel(torqueNm);
-    MaybeLog(torqueNm);
-
-    // TODO: BraceClient.SendElbowTorque(torqueNm);
-}
-```
+`PublishTorque` already forwards to `BraceBluetoothClient.SendTorque` when that component is present. Pairing / APK steps: [`QUEST3_HC06_TORQUE.md`](QUEST3_HC06_TORQUE.md).
 
 Public API for other scripts:
 
@@ -181,3 +172,4 @@ Public API for other scripts:
 - [ ] Dumbbells: Rigidbody + XRGrabInteractable + BoxMass + DumbbellVisual (1/3/10)
 - [ ] `RightHandGrabTorqueBridge` on Right Controller’s **Near-Far Interactor**
 - [ ] Grab right-handed → Console + HUD show non-zero torque; release → 0
+- [ ] (Optional) HC-06 paired on Quest + `BraceBluetoothClient` on `ElbowTorqueSystem` — see [`QUEST3_HC06_TORQUE.md`](QUEST3_HC06_TORQUE.md)

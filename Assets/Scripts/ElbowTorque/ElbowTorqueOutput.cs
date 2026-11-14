@@ -3,7 +3,7 @@ using UnityEngine;
 /// <summary>
 /// Single place that owns the current elbow torque command.
 /// Works without brace hardware: grab in VR → torque value for Console + on-screen HUD.
-/// Later: replace PublishTorque() body with a network send to the brace.
+/// On Quest device builds, optionally forwards torque to HC-06 via <see cref="BraceBluetoothClient"/>.
 /// </summary>
 public class ElbowTorqueOutput : MonoBehaviour
 {
@@ -12,6 +12,10 @@ public class ElbowTorqueOutput : MonoBehaviour
     [Header("Torque model (MVP)")]
     [Tooltip("Nm of elbow torque commanded per kilogram of held mass.")]
     public float torquePerKg = 0.5f;
+
+    [Header("Brace Bluetooth")]
+    [Tooltip("Assign BraceBluetoothClient on this GameObject (or leave empty to use GetComponent / Instance).")]
+    public BraceBluetoothClient braceBluetooth;
 
     [Header("Display")]
     [Tooltip("If enabled, create a head-locked TextMesh HUD in front of the XR camera.")]
@@ -24,7 +28,7 @@ public class ElbowTorqueOutput : MonoBehaviour
     public Vector3 hudLocalOffset = new Vector3(-0.18f, 0.1f, 0f);
 
     [Tooltip("If text looks mirrored, toggle this.")]
-    public bool flipHudText = true;
+    public bool flipHudText = false;
 
     [Tooltip("How often to Debug.Log torque (seconds). 0 = every frame.")]
     [Min(0f)]
@@ -56,6 +60,9 @@ public class ElbowTorqueOutput : MonoBehaviour
         }
 
         Instance = this;
+
+        if (braceBluetooth == null)
+            braceBluetooth = GetComponent<BraceBluetoothClient>() ?? BraceBluetoothClient.Instance;
 
         if (autoCreateHeadLockedHud)
             CreateHeadLockedHud();
@@ -101,14 +108,17 @@ public class ElbowTorqueOutput : MonoBehaviour
     }
 
     /// <summary>
-    /// HOOK FOR HARDWARE: swap the body of this method for a network send to the brace.
+    /// Publish torque to HUD / log and (when present) the HC-06 Bluetooth client.
     /// </summary>
     void PublishTorque(float torqueNm)
     {
         UpdateLabel(torqueNm);
         MaybeLog(torqueNm);
 
-        // TODO: BraceClient.SendElbowTorque(torqueNm);
+        if (braceBluetooth == null)
+            braceBluetooth = GetComponent<BraceBluetoothClient>() ?? BraceBluetoothClient.Instance;
+
+        braceBluetooth?.SendTorque(torqueNm);
     }
 
     void UpdateLabel(float torqueNm)
@@ -116,7 +126,14 @@ public class ElbowTorqueOutput : MonoBehaviour
         if (_hudText == null)
             return;
 
-        _hudText.text = $"Torque: {torqueNm:F1} Nm\nMass: {heldMassKg:F1} kg";
+        if (braceBluetooth == null)
+            braceBluetooth = GetComponent<BraceBluetoothClient>() ?? BraceBluetoothClient.Instance;
+
+        string btStatus = braceBluetooth != null && braceBluetooth.IsConnected
+            ? "BT: Connected"
+            : "BT: Not connected";
+
+        _hudText.text = $"Torque: {torqueNm:F1} Nm\nMass: {heldMassKg:F1} kg\n{btStatus}";
     }
 
     void MaybeLog(float torqueNm)
@@ -142,21 +159,13 @@ public class ElbowTorqueOutput : MonoBehaviour
             var root = new GameObject("ElbowTorqueHUD");
             _hudRoot = root.transform;
 
-            var bg = GameObject.CreatePrimitive(PrimitiveType.Quad);
-            bg.name = "Background";
-            bg.transform.SetParent(_hudRoot, false);
-            bg.transform.localPosition = new Vector3(0f, 0f, 0.01f);
-            bg.transform.localScale = new Vector3(0.42f, 0.16f, 1f);
-            Object.Destroy(bg.GetComponent<Collider>());
-            bg.GetComponent<MeshRenderer>().material.color = Color.black;
-
             var labelGo = new GameObject("TorqueLabel");
             _labelTransform = labelGo.transform;
             _labelTransform.SetParent(_hudRoot, false);
             _labelTransform.localPosition = Vector3.zero;
 
             _hudText = labelGo.AddComponent<TextMesh>();
-            _hudText.text = "Torque: 0.0 Nm\nMass: 0.0 kg";
+            _hudText.text = "Torque: 0.0 Nm\nMass: 0.0 kg\nBT: Not connected";
             _hudText.fontSize = 42;
             _hudText.characterSize = 0.01f;
             _hudText.anchor = TextAnchor.MiddleCenter;
@@ -193,10 +202,6 @@ public class ElbowTorqueOutput : MonoBehaviour
         float yaw = flipHudText ? 180f : 0f;
         _labelTransform.localRotation = Quaternion.Euler(0f, yaw, 0f);
         _labelTransform.localScale = Vector3.one;
-
-        var bg = _hudRoot != null ? _hudRoot.Find("Background") : null;
-        if (bg != null)
-            bg.localRotation = Quaternion.Euler(0f, yaw, 0f);
     }
 
     void AttachHudToCameraIfNeeded()
