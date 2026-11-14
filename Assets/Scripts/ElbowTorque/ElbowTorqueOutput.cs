@@ -160,7 +160,7 @@ public class ElbowTorqueOutput : MonoBehaviour
         tmp.fontSize = 2.5f;
         tmp.alignment = TextAlignmentOptions.Center;
         tmp.color = Color.white;
-        tmp.enableWordWrapping = false;
+        tmp.textWrappingMode = TextWrappingModes.NoWrap;
 
         // Reasonable default bounds so glyphs aren't clipped.
         tmp.rectTransform.sizeDelta = new Vector2(2.5f, 0.5f);

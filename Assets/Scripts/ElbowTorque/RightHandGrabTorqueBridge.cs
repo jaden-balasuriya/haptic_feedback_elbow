@@ -5,7 +5,7 @@ using UnityEngine.XR.Interaction.Toolkit.Interactors;
 /// <summary>
 /// Listens to the right-hand XR grab interactor and drives ElbowTorqueOutput
 /// from the held object's BoxMass. Attach to the same GameObject as the
-/// right controller's XRDirectInteractor (or XRRayInteractor).
+/// right controller's Near-Far Interactor (or other XRBaseInteractor).
 /// </summary>
 [RequireComponent(typeof(XRBaseInteractor))]
 public class RightHandGrabTorqueBridge : MonoBehaviour

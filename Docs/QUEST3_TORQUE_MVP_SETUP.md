@@ -16,10 +16,12 @@ In **Window → Package Manager**, ensure:
 
 No separate **TextMeshPro** package. In Unity 6, TMP ships inside **Unity UI** (`com.unity.ugui`). The auto HUD uses it at runtime; if Unity prompts once for TMP Essential Resources, import them — otherwise you can ignore TMP entirely in Package Manager.
 
-Optional samples (recommended once):
+**Required sample (Option A):**
 
-1. Package Manager → XR Interaction Toolkit → **Samples** → import **Starter Assets**.
-2. If using Meta Building Blocks for the rig, you can still add XRIT interactors, or wire grab via `BoxGrabTorqueEvents` UnityEvents (see below).
+1. Package Manager → **XR Interaction Toolkit** → **Samples** → import **Starter Assets**.
+2. You should get something like: `Assets/Samples/XR Interaction Toolkit/3.7.0/Starter Assets/`.
+
+If using Meta Building Blocks for the rig instead, skip Option A and use Option B / `BoxGrabTorqueEvents`.
 
 ## Scripts (copy into your Unity project)
 
@@ -40,14 +42,37 @@ Already in this repo under `Assets/Scripts/ElbowTorque/`:
 
 ### 1. XR rig (right-hand grab)
 
-Use whichever you already have for Quest:
+**Option A — Starter Assets XR Origin prefab (recommended for this MVP)**
 
-**Option A — XR Interaction Toolkit XR Origin (recommended for this MVP)**
+In XR Interaction Toolkit 3 / Unity 6, **GameObject → XR → XR Origin (VR)** only creates:
 
-1. Hierarchy → right-click → **XR → XR Origin (XR Rig)** (or use Meta Camera Rig + add XRIT interactors).
-2. Under **Camera Offset → Right Controller**, ensure there is an **XR Direct Interactor** (near-grab) and/or **XR Ray Interactor**.
-3. Add a **XR Interaction Manager** in the scene if one is not created automatically.
-4. Confirm **Project Settings → XR Plug-in Management → Android** has OpenXR enabled, with Meta Quest support / Meta feature group as you already use.
+```text
+XR Origin (VR)
+  └── Camera Offset
+        └── Main Camera
+```
+
+That is expected — **no Left/Right Controller**. Do **not** use that menu item for this MVP.
+
+Instead:
+
+1. Import **Starter Assets** (see above) if you have not already.
+2. Delete the scene’s default **Main Camera** (the prefab brings its own).
+3. Project window → drag this prefab into the Hierarchy:
+   - `Assets/Samples/XR Interaction Toolkit/<version>/Starter Assets/Prefabs/XR Origin (XR Rig)`
+4. Confirm Hierarchy looks like:
+
+```text
+XR Origin (XR Rig)
+  └── Camera Offset
+        ├── Main Camera
+        ├── Left Controller
+        └── Right Controller   ← grab lives here
+```
+
+5. Expand **Right Controller**. You should see interactors from the sample, including **Near-Far Interactor** (XRIT 3’s grab/ray combo; older docs said “Direct / Ray”).
+6. Hierarchy → **XR → Interaction Manager** if the scene does not already have one (Starter Assets often expects it).
+7. **Project Settings → XR Plug-in Management → Android**: OpenXR enabled, with Meta Quest support / Meta feature group as you already use.
 
 **Option B — Meta XR Building Blocks**
 
@@ -86,8 +111,8 @@ For each mass (1, 3, 5, 10 kg):
 
 ### 4a. Wire right-hand grab (automatic — preferred)
 
-1. Select the **Right Controller** GameObject that has **XR Direct Interactor** (or the interactor you use to grab).
-2. Add **`RightHandGrabTorqueBridge`**.
+1. Under **XR Origin (XR Rig) → Camera Offset → Right Controller**, select the **Near-Far Interactor** (or whichever child has the grab `XRBaseInteractor` you use).
+2. Add **`RightHandGrabTorqueBridge`** to that same GameObject.
 3. Optionally drag `ElbowTorqueSystem` into **Torque Output** (otherwise it uses the singleton Instance).
 
 That’s it — grab/release updates torque.
@@ -153,8 +178,9 @@ Public API for other scripts:
 
 ## Quick checklist
 
-- [ ] Unity 6 project; XR Interaction Toolkit installed; XR Origin + right Direct/Ray Interactor
+- [ ] Unity 6 project; XRIT Starter Assets imported
+- [ ] Scene uses **XR Origin (XR Rig)** prefab (not bare XR Origin (VR)) — Right Controller present
 - [ ] `ElbowTorqueOutput` in scene (auto HUD on, or your own label assigned)
 - [ ] 4 cubes: Rigidbody + XRGrabInteractable + BoxMass (1/3/5/10)
-- [ ] `RightHandGrabTorqueBridge` on right interactor
+- [ ] `RightHandGrabTorqueBridge` on Right Controller’s **Near-Far Interactor**
 - [ ] Grab right-handed → Console + HUD show non-zero torque; release → 0
