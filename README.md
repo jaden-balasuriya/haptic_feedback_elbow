@@ -31,8 +31,8 @@ torqueNm = massKg * torquePerKg
 | [`Assets/Scripts/ElbowTorque/`](Assets/Scripts/ElbowTorque/) | C# scripts (`BoxMass`, `ElbowTorqueOutput`, grab bridge) |
 | [`Docs/QUEST3_TORQUE_MVP_SETUP.md`](Docs/QUEST3_TORQUE_MVP_SETUP.md) | Packages, Editor wiring, Quest build checklist |
 | [`Docs/LINUX_QUEST3_DEPLOY.md`](Docs/LINUX_QUEST3_DEPLOY.md) | Build APK on Linux and install/run on Quest 3 via adb |
-| [`arduino/TorquePrint/`](arduino/TorquePrint/) | Arduino sketch: HC-06 UART → print torque lines |
-| [`Docs/QUEST3_HC06_TORQUE.md`](Docs/QUEST3_HC06_TORQUE.md) | Quest → HC-06 → Arduino wiring, pairing, protocol |
+| [`arduino/TorquePrint/`](arduino/TorquePrint/) | UNO Q sketch: HC-06 on `Serial1` → print torque via `Monitor` |
+| [`Docs/QUEST3_HC06_TORQUE.md`](Docs/QUEST3_HC06_TORQUE.md) | Quest → HC-06 → UNO Q wiring, CLI upload, App Lab monitor |
 
 **Brace integration hook:** `ElbowTorqueOutput.PublishTorque(float torqueNm)` — replace the Debug.Log / UI path with a Bluetooth SPP send to the HC-06 when the Unity client is ready.
 
