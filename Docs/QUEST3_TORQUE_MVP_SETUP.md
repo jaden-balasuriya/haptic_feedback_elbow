@@ -1,6 +1,8 @@
 # Quest 3 Elbow Torque MVP — Unity Setup
 
-Simple VR scene: grab boxes with the **right hand**; elbow torque = `mass × torquePerKg`. Torque is logged to the Console and shown on a floating TextMeshPro label. Later, replace the publish hook with a network send to the brace.
+Target editor: **Unity 6** (e.g. `6000.6.x`, as in `~/projects/HapticFeedbackArm`).
+
+Simple VR scene: grab boxes with the **right hand**; elbow torque = `mass × torquePerKg`. Torque is logged to the Console and shown on a floating head-locked HUD. Later, replace the publish hook with a network send to the brace.
 
 ## Packages required
 
@@ -11,7 +13,8 @@ In **Window → Package Manager**, ensure:
 | **XR Interaction Toolkit** | Primary grab path. Install 3.x (Unity 6). |
 | **XR Plugin Management** + **OpenXR** | Already assumed for Quest. |
 | **Meta XR SDK** / OpenXR Meta feature group | Already assumed. |
-| **TextMeshPro** | Usually present; import TMP Essentials if prompted. |
+
+No separate **TextMeshPro** package. In Unity 6, TMP ships inside **Unity UI** (`com.unity.ugui`). The auto HUD uses it at runtime; if Unity prompts once for TMP Essential Resources, import them — otherwise you can ignore TMP entirely in Package Manager.
 
 Optional samples (recommended once):
 
@@ -57,7 +60,7 @@ Use whichever you already have for Quest:
 2. Add component **`ElbowTorqueOutput`**.
 3. Leave **Torque Label** empty and keep **Auto Create Head Locked Hud** enabled (default).
    - At runtime a HUD appears in front of the headset: `Elbow Torque: X.X Nm`.
-   - Optional: assign your own world-space TMP instead; that disables the need for auto HUD.
+   - Optional: assign your own world-space text label instead; that disables the need for auto HUD.
 4. Set **Torque Per Kg** (e.g. `0.5` → 10 kg box ⇒ `5.0 Nm`).
 5. Set **Log Interval Seconds** to `0.25` (or `0` for every frame).
 
@@ -150,8 +153,8 @@ Public API for other scripts:
 
 ## Quick checklist
 
-- [ ] XR Interaction Toolkit installed; XR Origin + right Direct/Ray Interactor
-- [ ] `ElbowTorqueOutput` in scene + TMP label assigned
+- [ ] Unity 6 project; XR Interaction Toolkit installed; XR Origin + right Direct/Ray Interactor
+- [ ] `ElbowTorqueOutput` in scene (auto HUD on, or your own label assigned)
 - [ ] 4 cubes: Rigidbody + XRGrabInteractable + BoxMass (1/3/5/10)
 - [ ] `RightHandGrabTorqueBridge` on right interactor
-- [ ] Grab right-handed → Console + label show non-zero torque; release → 0
+- [ ] Grab right-handed → Console + HUD show non-zero torque; release → 0
