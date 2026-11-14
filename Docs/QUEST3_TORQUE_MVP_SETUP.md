@@ -51,17 +51,17 @@ Use whichever you already have for Quest:
 1. Use Meta’s controller/hand building blocks so you can grab objects.
 2. Skip `RightHandGrabTorqueBridge` and instead wire each box’s grab events to `BoxGrabTorqueEvents` (section 4b).
 
-### 2. Torque output + floating label
+### 2. Torque output + on-screen HUD
 
 1. Create empty GameObject: `ElbowTorqueSystem`.
 2. Add component **`ElbowTorqueOutput`**.
-3. Create UI for the label:
-   - Hierarchy → **3D Object → Text - TextMeshPro** (world space), name it `TorqueLabel`.
-   - Place it somewhere readable in front of the player spawn (e.g. floating above a table).
-   - Font size ~0.1–0.3 world units; color high-contrast.
-4. Drag `TorqueLabel` into **ElbowTorqueOutput → Torque Label**.
-5. Set **Torque Per Kg** (e.g. `0.5` → 10 kg box ⇒ `5.0 Nm`).
-6. Set **Log Interval Seconds** to `0.25` (or `0` for every frame).
+3. Leave **Torque Label** empty and keep **Auto Create Head Locked Hud** enabled (default).
+   - At runtime a HUD appears in front of the headset: `Elbow Torque: X.X Nm`.
+   - Optional: assign your own world-space TMP instead; that disables the need for auto HUD.
+4. Set **Torque Per Kg** (e.g. `0.5` → 10 kg box ⇒ `5.0 Nm`).
+5. Set **Log Interval Seconds** to `0.25` (or `0` for every frame).
+
+No brace hardware is required for this MVP: VR grab alone drives Console + HUD torque.
 
 ### 3. Create 4 grabbable boxes
 
