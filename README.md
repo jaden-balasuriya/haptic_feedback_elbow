@@ -16,7 +16,22 @@ This project explores grounded haptic feedback for VR: when you move your arm in
 
 - **Hardware** — motorized arm / elbow wearable
 - **Headset** — Meta Quest 3
-- **Software** — Unity
+- **Software** — Unity 6 (URP) + OpenXR / Meta XR + XR Interaction Toolkit
+
+## Quest 3 torque MVP
+
+Grab boxes with the right hand; command elbow torque from box mass:
+
+```text
+torqueNm = massKg * torquePerKg
+```
+
+| Path | Purpose |
+|------|---------|
+| [`Assets/Scripts/ElbowTorque/`](Assets/Scripts/ElbowTorque/) | C# scripts (`BoxMass`, `ElbowTorqueOutput`, grab bridge) |
+| [`Docs/QUEST3_TORQUE_MVP_SETUP.md`](Docs/QUEST3_TORQUE_MVP_SETUP.md) | Packages, Editor wiring, Quest build checklist |
+
+**Brace integration hook:** `ElbowTorqueOutput.PublishTorque(float torqueNm)` — replace the Debug.Log / UI path with a network send when the hardware is ready.
 
 ## Status
 

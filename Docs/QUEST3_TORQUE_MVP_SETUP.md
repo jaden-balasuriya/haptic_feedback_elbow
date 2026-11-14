@@ -1,0 +1,157 @@
+# Quest 3 Elbow Torque MVP — Unity Setup
+
+Simple VR scene: grab boxes with the **right hand**; elbow torque = `mass × torquePerKg`. Torque is logged to the Console and shown on a floating TextMeshPro label. Later, replace the publish hook with a network send to the brace.
+
+## Packages required
+
+In **Window → Package Manager**, ensure:
+
+| Package | Notes |
+|---------|--------|
+| **XR Interaction Toolkit** | Primary grab path. Install 3.x (Unity 6). |
+| **XR Plugin Management** + **OpenXR** | Already assumed for Quest. |
+| **Meta XR SDK** / OpenXR Meta feature group | Already assumed. |
+| **TextMeshPro** | Usually present; import TMP Essentials if prompted. |
+
+Optional samples (recommended once):
+
+1. Package Manager → XR Interaction Toolkit → **Samples** → import **Starter Assets**.
+2. If using Meta Building Blocks for the rig, you can still add XRIT interactors, or wire grab via `BoxGrabTorqueEvents` UnityEvents (see below).
+
+## Scripts (copy into your Unity project)
+
+Already in this repo under `Assets/Scripts/ElbowTorque/`:
+
+| Script | Role |
+|--------|------|
+| `BoxMass.cs` | Mass (kg) on each cube; syncs `Rigidbody.mass`. |
+| `ElbowTorqueOutput.cs` | **Single torque owner** — UI + `Debug.Log` + future brace send. |
+| `RightHandGrabTorqueBridge.cs` | Listens to right-hand XR grab → drives torque. |
+| `BoxGrabTorqueEvents.cs` | Optional Inspector UnityEvent hooks (alternative to the bridge). |
+
+**Hardware hook:** open `ElbowTorqueOutput.PublishTorque()` — that is the one method to replace with a network send.
+
+---
+
+## Editor setup (step by step)
+
+### 1. XR rig (right-hand grab)
+
+Use whichever you already have for Quest:
+
+**Option A — XR Interaction Toolkit XR Origin (recommended for this MVP)**
+
+1. Hierarchy → right-click → **XR → XR Origin (XR Rig)** (or use Meta Camera Rig + add XRIT interactors).
+2. Under **Camera Offset → Right Controller**, ensure there is an **XR Direct Interactor** (near-grab) and/or **XR Ray Interactor**.
+3. Add a **XR Interaction Manager** in the scene if one is not created automatically.
+4. Confirm **Project Settings → XR Plug-in Management → Android** has OpenXR enabled, with Meta Quest support / Meta feature group as you already use.
+
+**Option B — Meta XR Building Blocks**
+
+1. Use Meta’s controller/hand building blocks so you can grab objects.
+2. Skip `RightHandGrabTorqueBridge` and instead wire each box’s grab events to `BoxGrabTorqueEvents` (section 4b).
+
+### 2. Torque output + floating label
+
+1. Create empty GameObject: `ElbowTorqueSystem`.
+2. Add component **`ElbowTorqueOutput`**.
+3. Create UI for the label:
+   - Hierarchy → **3D Object → Text - TextMeshPro** (world space), name it `TorqueLabel`.
+   - Place it somewhere readable in front of the player spawn (e.g. floating above a table).
+   - Font size ~0.1–0.3 world units; color high-contrast.
+4. Drag `TorqueLabel` into **ElbowTorqueOutput → Torque Label**.
+5. Set **Torque Per Kg** (e.g. `0.5` → 10 kg box ⇒ `5.0 Nm`).
+6. Set **Log Interval Seconds** to `0.25` (or `0` for every frame).
+
+### 3. Create 4 grabbable boxes
+
+For each mass (1, 3, 5, 10 kg):
+
+1. **3D Object → Cube**, name e.g. `Box_1kg`, `Box_3kg`, …
+2. Scale / color them differently so they are easy to tell apart.
+3. Add **`Rigidbody`**:
+   - Use Gravity: on
+   - Mass: match the box (1 / 3 / 5 / 10) — also set on `BoxMass`
+4. Add **`Box Collider`** (default cube already has one).
+5. Add **`XRGrabInteractable`** (XR Interaction Toolkit):
+   - Interaction Layer Mask: Default (or your grab layer)
+   - Movement Type: Instantaneous or Velocity Tracking
+6. Add **`BoxMass`**:
+   - **Mass Kg**: `1` / `3` / `5` / `10`
+   - **Sync Rigidbody Mass**: enabled
+7. Place boxes on a table / floor within reach of the right hand.
+
+### 4a. Wire right-hand grab (automatic — preferred)
+
+1. Select the **Right Controller** GameObject that has **XR Direct Interactor** (or the interactor you use to grab).
+2. Add **`RightHandGrabTorqueBridge`**.
+3. Optionally drag `ElbowTorqueSystem` into **Torque Output** (otherwise it uses the singleton Instance).
+
+That’s it — grab/release updates torque.
+
+### 4b. Alternative: UnityEvents on each box
+
+If you are not using XRIT interactors (e.g. Meta grab only):
+
+1. On each box add **`BoxGrabTorqueEvents`** (needs `BoxMass`).
+2. On the grab component’s **Select Entered** / **Select Exited** (or Meta equivalent UnityEvent):
+   - Entered → `BoxGrabTorqueEvents.OnGrabbed`
+   - Exited → `BoxGrabTorqueEvents.OnReleased`
+3. Only wire the **right** hand’s grab path so left-hand grabs do not drive torque.
+
+### 5. Build & run on Quest 3
+
+1. **File → Build Settings → Android**, platform Switch if needed.
+2. Run in Editor with Quest Link / Meta XR Simulator, or **Build and Run** to the headset.
+3. Grab a box with the **right** controller:
+   - Console: `[ElbowTorque] 5.000 Nm (mass=10.0 kg)` (example)
+   - Label: `Elbow Torque: 5.0 Nm`
+4. Release: torque / label go to `0.0 Nm`.
+
+---
+
+## Torque formula (MVP)
+
+```text
+torqueNm = heldMassKg * torquePerKg
+```
+
+When nothing is held by the right hand: `heldMassKg = 0` → `torqueNm = 0`.
+
+Later you can change the line in `ElbowTorqueOutput.Update()` to something like:
+
+```csharp
+currentTorqueNm = heldMassKg * torquePerKg * Mathf.Sin(elbowAngleRad);
+```
+
+---
+
+## Finding the brace send hook
+
+In `ElbowTorqueOutput.cs`:
+
+```csharp
+void PublishTorque(float torqueNm)
+{
+    UpdateLabel(torqueNm);
+    MaybeLog(torqueNm);
+
+    // TODO: BraceClient.SendElbowTorque(torqueNm);
+}
+```
+
+Public API for other scripts:
+
+- `ElbowTorqueOutput.Instance.CurrentTorqueNm`
+- `ElbowTorqueOutput.Instance.SetHeldMass(float)`
+- `ElbowTorqueOutput.Instance.ClearHeld()`
+
+---
+
+## Quick checklist
+
+- [ ] XR Interaction Toolkit installed; XR Origin + right Direct/Ray Interactor
+- [ ] `ElbowTorqueOutput` in scene + TMP label assigned
+- [ ] 4 cubes: Rigidbody + XRGrabInteractable + BoxMass (1/3/5/10)
+- [ ] `RightHandGrabTorqueBridge` on right interactor
+- [ ] Grab right-handed → Console + label show non-zero torque; release → 0
