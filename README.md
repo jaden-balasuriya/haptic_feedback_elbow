@@ -1,45 +1,63 @@
-# Haptic Feedback Elbow
+# Haptic Feedback Arm
 
-A wearable motorized arm system that adds physical resistance and stopping forces to arm movement, paired with custom games on the Meta Quest 3.
+A wearable elbow brace that applies motorized resistance in VR, driven by a Meta Quest 3 Unity app over Wi-Fi.
 
-## Overview
+When you lift a virtual weight or draw a bow, the Quest estimates elbow load from pose + object mass (or bow draw), maps that to motor PWM, and the brace pushes back so the interaction feels physical.
 
-This project explores grounded haptic feedback for VR: when you move your arm in a Quest 3 experience, a motor on the arm can push back, hold, or limit motion so in-game interactions feel more physical. Games are built in Unity and talk to the wearable hardware so virtual events can drive real force feedback.
+## What it can do
 
-## Goals
-
-- Make VR arm interactions feel tangible through controlled resistance and stops
-- Keep the wearable simple enough to prototype and iterate on
-- Support custom Unity / Quest 3 games that use the hardware as part of gameplay
+- **Mass-based elbow torque** — Grab dumbbells / boxes; torque \(\tau = m\,g\,L\,|\sin\theta_f|\) from hand mass, upper-arm roll (MPU6050), and elbow angle (potentiometer). See [`Docs/ELBOW_TORQUE_CALCULATION.md`](Docs/ELBOW_TORQUE_CALCULATION.md).
+- **Motorized resistance** — Torque maps to PWM for an L298N-driven motor on the brace.
+- **Bow & arrow** — Left hand summons the bow; right-arm draw uses pot flexion for draw depth and motor load (no mass/IMU path).
+- **Archery gallery** — Standing targets in a meadow play space; hit flash / tip / reset.
+- **Bidirectional brace link** — Quest ↔ Arduino UNO Q over the board’s Wi-Fi hotspot (TCP).
+  - Quest → MCU: PWM / force command lines
+  - MCU → Quest: `angleDeg=` (elbow pot) and IMU orientation for the torque model + HUD
+- **On-device HUD** — Head-locked readout for torque, arm angle, Wi-Fi status, etc.
+- **Linux → Quest deploy** — Build an Android APK in Unity and install with `adb` ([`Docs/LINUX_QUEST3_DEPLOY.md`](Docs/LINUX_QUEST3_DEPLOY.md)).
 
 ## Stack
 
-- **Hardware** — motorized arm / elbow wearable
-- **Headset** — Meta Quest 3
-- **Software** — Unity 6 (URP) + OpenXR / Meta XR + XR Interaction Toolkit
+| Layer | Tech |
+|-------|------|
+| **Headset** | Meta Quest 3 (Android APK; no PC Link required) |
+| **VR app** | Unity 6 (`6000.6.x`), URP |
+| **XR** | OpenXR, Meta XR SDK, XR Interaction Toolkit 3.x, Input System |
+| **Brace MCU** | Arduino UNO Q (Zephyr sketch + Linux side) |
+| **Bridge** | Python on UNO Q (`arduino/TorquePrint/python/main.py`) via Arduino Router Bridge |
+| **Link** | UNO Q Wi-Fi hotspot → TCP (`10.42.0.1:7777`) |
+| **Actuation** | L298N motor driver (PWM + direction) |
+| **Sensing** | Elbow potentiometer (A0), MPU6050 on the upper arm |
 
-## Quest 3 force MVP
+Bluetooth / HC-06 helpers still exist under `Assets/Scripts/Brace/`, but the supported path is the UNO Q hotspot + TCP.
 
-Grab boxes with the right hand; command force (Newtons) from box mass:
-
-```text
-forceN = massKg * 9.81
-```
+## Repo map
 
 | Path | Purpose |
 |------|---------|
-| [`Assets/Scripts/ElbowTorque/`](Assets/Scripts/ElbowTorque/) | C# scripts (`BoxMass`, `ElbowTorqueOutput`, grab bridge) |
-| [`Docs/QUEST3_TORQUE_MVP_SETUP.md`](Docs/QUEST3_TORQUE_MVP_SETUP.md) | Packages, Editor wiring, Quest build checklist |
-| [`Docs/LINUX_QUEST3_DEPLOY.md`](Docs/LINUX_QUEST3_DEPLOY.md) | Build APK on Linux and install/run on Quest 3 via adb |
-| [`arduino/TorquePrint/`](arduino/TorquePrint/) | UNO Q MCU sketch + Wi-Fi hotspot TCP server (`python/main.py`) |
-| [`Assets/Scripts/Brace/`](Assets/Scripts/Brace/) | Quest TCP client (`BraceTcpClient`) for the UNO Q hotspot |
-| [`Docs/QUEST3_HC06_TORQUE.md`](Docs/QUEST3_HC06_TORQUE.md) | Hotspot + TCP setup, Quest join, verify prints |
+| [`Assets/Scripts/ElbowTorque/`](Assets/Scripts/ElbowTorque/) | Torque model, grab bridge, dumbbells, bow/arrow, archery, meadow bootstrap |
+| [`Assets/Scripts/Brace/`](Assets/Scripts/Brace/) | `BraceTcpClient` (and legacy Bluetooth clients) |
+| [`arduino/TorquePrint/`](arduino/TorquePrint/) | MCU sketch, hotspot setup, Python TCP ↔ Bridge |
+| [`Docs/QUEST3_TORQUE_MVP_SETUP.md`](Docs/QUEST3_TORQUE_MVP_SETUP.md) | Unity packages, scene wiring, Quest build checklist |
+| [`Docs/QUEST3_HC06_TORQUE.md`](Docs/QUEST3_HC06_TORQUE.md) | Hotspot + TCP setup and verification |
+| [`Docs/ELBOW_TORQUE_CALCULATION.md`](Docs/ELBOW_TORQUE_CALCULATION.md) | Pose → \(\tau\) → PWM math |
+| [`Docs/LINUX_QUEST3_DEPLOY.md`](Docs/LINUX_QUEST3_DEPLOY.md) | Build APK on Linux and install via adb |
 
-**Brace path (bidirectional):**
+## Data path (Wi-Fi)
 
-- Quest → MCU: `ElbowTorqueOutput` → `BraceTcpClient.SendForce` → hotspot TCP → Bridge → MCU (`forceN=`)
-- MCU → Quest: pot on **A0** → `get_elbow_angle` → TCP `angleDeg=` → HUD `Arm angle: … deg`
+```text
+Quest 3 (Unity)
+  ElbowTorqueOutput  →  BraceTcpClient  →  TCP 10.42.0.1:7777
+        │
+        v
+  UNO Q Linux  (python/main.py)
+        │  Bridge RPC
+        v
+  UNO Q MCU  (TorquePrint.ino)  →  L298N / Monitor
+        │
+        └── pot + MPU  →  angleDeg= / pitch  →  Quest HUD + torque model
+```
 
 ## Status
 
-Early stage. Hardware, firmware, and Unity integration are under active development.
+Working MVP: VR interactions, bidirectional Wi-Fi link, and torque → motor mapping are in place and under active iteration (calibration, motor feel, and gameplay).
