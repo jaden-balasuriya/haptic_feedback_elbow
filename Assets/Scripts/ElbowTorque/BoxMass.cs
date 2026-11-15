@@ -7,7 +7,7 @@ using UnityEngine;
 [DisallowMultipleComponent]
 public class BoxMass : MonoBehaviour
 {
-    [Tooltip("Mass in kilograms used for torque = mass * torquePerKg.")]
+    [Tooltip("Mass in kilograms used for force = mass * 9.81 (Newtons).")]
     [Min(0f)]
     public float massKg = 1f;
 

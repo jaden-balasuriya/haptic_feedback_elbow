@@ -1,143 +1,142 @@
-# Quest 3 → HC-06 → Arduino UNO Q torque
+# Quest 3 → UNO Q Wi-Fi hotspot → force (N)
 
-Send elbow torque from the Quest 3 Unity app to an **Arduino UNO Q** over an **HC-06** Bluetooth classic serial bridge. The MCU sketch prints received values; motor control is not included yet.
+Send **force in Newtons** from the Quest 3 Unity app to an **Arduino UNO Q** over a **Wi-Fi hotspot** hosted by the board. No HC-06 / Bluetooth SPP required.
 
 ## Architecture
 
 ```text
 Quest 3 Unity APK
-  BraceBluetoothClient (SPP)
+  ElbowTorqueOutput  (forceN = massKg * 9.81)
+  BraceTcpClient     →  TCP 10.42.0.1:7777
         |
         v
-     HC-06  --UART Serial1 D0/D1-->  UNO Q MCU (TorquePrint)
-                                        |
-                              Monitor / Router Bridge
-                                        |
-                         PC: tio /dev/ttyACM0  (or App Lab / IDE)
+  UNO Q Linux hotspot (SSID UNO-Q-Torque)
+  python/main.py     →  Bridge.call("on_force_line", "9.810")
+        |
+        v
+  MCU sketch (TorquePrint.ino)  →  Monitor: forceN=9.810
 ```
 
-- Pair the HC-06 to the **Quest headset**, then run a **native APK** (see [`LINUX_QUEST3_DEPLOY.md`](LINUX_QUEST3_DEPLOY.md)). Quest Link is not used here — Link would require pairing to the PC instead.
-- Unity sends ASCII lines at ~10 Hz (configurable), not every frame.
+Also on the UNO Q (for Quest networking):
 
-## Wiring (UNO Q)
-
-UNO Q digital pins are **3.3 V**. Power the HC-06 from **3.3V**.
-
-| HC-06 | UNO Q |
-|-------|-------|
-| VCC | **3.3V** |
-| GND | GND |
-| TXD | **D0** (`Serial1` RX) |
-| RXD | **D1** (`Serial1` TX) |
-
-| Link | Details |
-|------|---------|
-| HC-06 ↔ MCU | `Serial1` @ **9600** 8N1 |
-| MCU ↔ PC | `Monitor` → USB (`/dev/ttyACM0` on the host). Baud ignored for USB. |
+- `setup_hotspot.sh` — NetworkManager AP + autoconnect
+- `python/connectivity_shim.py` — HTTP `204` on `:80` so Android validates the hotspot
+- DNS overrides under `/etc/NetworkManager/dnsmasq-shared.d/` for connectivity checks
 
 ## Message protocol
 
 ```text
-5.000\n
+9.810\n
 ```
 
-- One ASCII line per command = elbow torque in Nm.
-- Zero on release: `0.000\n`.
+- One ASCII line = force in **Newtons**
+- `F = massKg × 9.81` (release → `0.000\n`)
 
-## 1. Flash TorquePrint on the UNO Q
+**Port:** use **7777** (not 9000). Quest SELinux blocks untrusted apps from connecting to port 9000 (`webserver_port_t`).
+
+## 1. Flash the MCU sketch
+
+From a PC with the board on USB:
 
 ```bash
-arduino-cli core install arduino:zephyr
-arduino-cli lib install Arduino_RouterBridge
-
 cd arduino/TorquePrint
 arduino-cli compile --fqbn arduino:zephyr:unoq .
 arduino-cli upload  --fqbn arduino:zephyr:unoq -p /dev/ttyACM0 .
 ```
 
-Confirm the board/FQBN with:
+Confirm: `arduino-cli board list` → `arduino:zephyr:unoq`.
 
-```bash
-arduino-cli board list
-# expect: Arduino UNO Q    arduino:zephyr:unoq
-```
-
-Watch MCU output on the host:
+Watch MCU output:
 
 ```bash
 cat /dev/ttyACM0
 # or: tio /dev/ttyACM0
 ```
 
-You should see `TorquePrint ready (UNO Q)`.
+Expect `ForcePrint ready` / later `forceN=...`.
 
-## 2. Pair the HC-06 on Quest 3
+## 2. Deploy Linux app + hotspot on the UNO Q
 
-1. Power UNO Q + HC-06 (LED on the HC-06 should blink when idle).
-2. On the Quest: **Settings → Bluetooth**.
-3. Put on the headset (or use Quest Link casting / phone app if needed to navigate settings).
-4. Select the module (name often **`HC-06`**). PIN is usually **`1234`** or **`0000`**.
-5. Leave it **paired**. Status may show “Not connected” until the Unity app opens an SPP socket — that is normal.
+Copy this folder onto the board (e.g. `/home/arduino/ArduinoApps/torqueprint/`), then over `adb shell` / SSH:
 
-If several HC-06 modules are nearby, note the MAC in Bluetooth settings and paste it into the Unity component (below).
+```bash
+cd /home/arduino/ArduinoApps/torqueprint   # or your path
+chmod +x setup_hotspot.sh
+./setup_hotspot.sh                         # SSID=UNO-Q-Torque  password=torquepilot
+```
 
-## 3. Unity scene wiring
+Start the TCP + Bridge server (Docker example used in this project):
 
-Scripts live under [`Assets/Scripts/Brace/`](../Assets/Scripts/Brace/):
+```bash
+docker run -d --name torqueprint --restart unless-stopped --network host --privileged \
+  -v /home/arduino/ArduinoApps/torqueprint:/app \
+  -v /var/run/arduino-router.sock:/var/run/arduino-router.sock \
+  --user 0:0 \
+  ghcr.io/arduino/app-bricks/python-apps-base:0.5.0
+```
+
+Connectivity shim (HTTP 204 on port 80):
+
+```bash
+docker run -d --name torque-connshim --restart unless-stopped --network host --user 0:0 \
+  -v /home/arduino/ArduinoApps/torqueprint/python/connectivity_shim.py:/shim.py:ro \
+  --entrypoint python3 \
+  ghcr.io/arduino/app-bricks/python-apps-base:0.5.0 /shim.py
+```
+
+You should see `[TorqueTCP] Listening on 0.0.0.0:7777`.
+
+### Persistence after power cycle
+
+| Piece | Survives reboot? |
+|-------|------------------|
+| Hotspot profile (`autoconnect yes`) | Yes |
+| `torqueprint` / `torque-connshim` containers (`unless-stopped`) | Yes |
+| App files under `ArduinoApps/torqueprint/` | Yes |
+| Factory reset / OS reflash | No — redeploy |
+
+## 3. Quest Wi-Fi
+
+1. Quest: **Settings → Wi-Fi → UNO-Q-Torque** (password **`torquepilot`**).
+2. If it says “No internet”, keep using the network anyway.
+3. Quest IP is typically `10.42.0.x`; gateway **`10.42.0.1`**.
+
+Do **not** rely on campus Visitor Wi-Fi for this link (client isolation).
+
+## 4. Unity
 
 | File | Role |
 |------|------|
-| `BraceBluetoothSpp.cs` | Android SPP socket (Java APIs via `AndroidJavaObject`) |
-| `BraceBluetoothClient.cs` | MonoBehaviour: connect, throttle, send lines |
-| `Assets/Plugins/Android/AndroidManifest.xml` | Named `UnityPlayerGameActivity` + `BLUETOOTH_CONNECT` (+ legacy) permissions |
+| `BraceTcpClient.cs` | TCP client → `10.42.0.1:7777`, sends force lines |
+| `ElbowTorqueOutput.cs` | `forceN = mass * 9.81`, HUD `Force: … N` |
+| `Assets/Plugins/Android/AndroidManifest.xml` | Internet / Wi-Fi permissions + GameActivity |
+| `arduino/TorquePrint/*` | MCU + Linux TCP/hotspot |
 
-In **`SampleScene`**, **`ElbowTorqueSystem`** already has:
+In **SampleScene**, `ElbowTorqueSystem` has `ElbowTorqueOutput` + `BraceTcpClient` (`host=10.42.0.1`, `port=7777`).
 
-- `ElbowTorqueOutput` with **Brace Bluetooth** assigned
-- `BraceBluetoothClient` (**Device Name** = `HC-06`, **Auto Connect On Start** on, **Send Hz** = 10)
+Build a **native APK** and install on Quest ([`LINUX_QUEST3_DEPLOY.md`](LINUX_QUEST3_DEPLOY.md)). Editor Play Mode does not open the TCP brace link the same way.
 
-Inspector tweaks if needed:
+## 5. Verify
 
-- **Device Name** must match the Quest paired name, **or**
-- **Mac Address** `AA:BB:CC:DD:EE:FF` to pin a specific module
-
-`PublishTorque` calls `braceBluetooth.SendTorque(torqueNm)`.
-
-## 4. Build and run on the Quest
-
-1. Build an **Android APK** and install on the Quest ([`LINUX_QUEST3_DEPLOY.md`](LINUX_QUEST3_DEPLOY.md)).
-2. First launch may prompt for **Nearby devices / Bluetooth** permission — allow it.
-3. Check `adb logcat` for:
-
-   ```text
-   [BraceBT] Connecting to 'HC-06' ...
-   [BraceBT] Connected to HC-06 (...)
-   ```
-
-4. On the PC, keep `cat /dev/ttyACM0` (or `tio`) open.
-5. In VR, grab a dumbbell with the **right** hand → monitor should show e.g. `torqueNm=5.000`.
-6. Release → `torqueNm=0.000`.
-
-### Quick verify without VR grab
-
-With the APK connected, you can also confirm the Arduino path alone using a phone Bluetooth serial terminal to the HC-06 sending `5.000` — same print on the UNO Q monitor.
+1. HUD: `Force: X.X N` and `WiFi: Connected`
+2. Grab 1 kg dumbbell → about **9.8 N**
+3. On PC: `cat /dev/ttyACM0` → `forceN=9.810`
+4. Release → `forceN=0.000`
 
 ## Troubleshooting
 
-| Symptom | What to check |
-|---------|----------------|
-| `paired device named 'HC-06' not found` | Pair in Quest Settings first; name must match exactly (or set MAC). |
-| Permission denied / no connect prompt | Rebuild with the project `AndroidManifest.xml`; allow Bluetooth on first run. |
-| Connected in Settings but no torque lines | App must open SPP (our client). “Connected” in Settings is not enough by itself. |
-| Connect fails after UUID error | Client already retries insecure RFCOMM; power-cycle HC-06 and re-pair. |
-| Works in Editor? | **No.** SPP only runs on the Quest APK (`UNITY_ANDROID`). |
-| Quest Link | Do **not** use Link for this path; pair HC-06 to the headset and run the APK. |
+| Symptom | Check |
+|---------|--------|
+| WiFi: Not connected / `Access denied` on :9000 | Must use port **7777** (rebuild APK + server) |
+| WiFi: Not connected (timeout) | Rejoin hotspot; ensure `torqueprint` listening; connectivity shim on :80 |
+| Hotspot missing after reboot | `nmcli connection modify Hotspot connection.autoconnect yes` |
+| Bridge / Monitor silent | MCU sketch flashed; `arduino-router` running; Python `on_force_line` |
+| Campus Visitor Wi-Fi | Use board hotspot instead |
 
 ## Checklist
 
-- [ ] HC-06 on UNO Q (**3.3V**, TXD→D0, RXD←D1)
-- [ ] `TorquePrint` uploaded (`arduino:zephyr:unoq`); `cat /dev/ttyACM0` shows ready
-- [ ] HC-06 paired on Quest 3
-- [ ] `ElbowTorqueSystem` has `BraceBluetoothClient` (already in SampleScene)
-- [ ] Native APK installed; Bluetooth permission allowed
-- [ ] Grab in VR → UNO Q monitor prints `torqueNm=...`
+- [ ] `TorquePrint.ino` uploaded (`on_force_line` / `forceN=`)
+- [ ] Hotspot + TCP `:7777` + connshim running on UNO Q
+- [ ] Quest joined `UNO-Q-Torque`
+- [ ] APK built with `BraceTcpClient` port **7777**
+- [ ] Grab → Monitor shows `forceN=...`

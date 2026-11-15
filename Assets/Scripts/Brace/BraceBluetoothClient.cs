@@ -4,26 +4,27 @@ using UnityEngine.Android;
 #endif
 
 /// <summary>
-/// Unity-facing HC-06 / brace Bluetooth client.
+/// Unity-facing brace Bluetooth client for the Arduino UNO Q onboard radio.
 /// Add to the same GameObject as <see cref="ElbowTorqueOutput"/> (or assign the reference).
 /// Sends ASCII lines: "5.000\n" (Nm). Runs only on a Quest / Android device build.
+/// Pair the UNO Q (alias Arduino-UNO-Q) in Quest Settings, then this opens Classic SPP.
 /// </summary>
 public class BraceBluetoothClient : MonoBehaviour
 {
     public static BraceBluetoothClient Instance { get; private set; }
 
     [Header("Device")]
-    [Tooltip("Bonded Bluetooth name as shown in Quest Settings (often HC-06).")]
-    public string deviceName = "HC-06";
+    [Tooltip("Bluetooth name (setup_bt.sh sets Arduino-UNO-Q). Quest Settings often will not list it.")]
+    public string deviceName = "Arduino-UNO-Q";
 
-    [Tooltip("Optional MAC override, e.g. AA:BB:CC:DD:EE:FF. If set, name is ignored.")]
-    public string macAddress = "";
+    [Tooltip("UNO Q MAC from `bluetoothctl show` (Address). Preferred on Quest — skips Settings discovery.")]
+    public string macAddress = "94:97:4F:AC:32:F7";
 
     [Tooltip("Connect automatically when the scene starts (after permission).")]
     public bool autoConnectOnStart = true;
 
     [Header("Send rate")]
-    [Tooltip("Max torque lines per second. Keep well under HC-06 / UART capacity.")]
+    [Tooltip("Max torque lines per second.")]
     [Range(1f, 30f)]
     public float sendHz = 10f;
 
@@ -102,7 +103,7 @@ public class BraceBluetoothClient : MonoBehaviour
         FlushPending();
     }
 
-    /// <summary>Begin SPP connect to the paired HC-06. Safe to call more than once.</summary>
+    /// <summary>Begin SPP connect to the paired UNO Q. Safe to call more than once.</summary>
     public void Connect()
     {
 #if UNITY_ANDROID && !UNITY_EDITOR
@@ -164,17 +165,24 @@ public class BraceBluetoothClient : MonoBehaviour
 #if UNITY_ANDROID && !UNITY_EDITOR
     bool EnsureBluetoothConnectPermission()
     {
-        const string perm = "android.permission.BLUETOOTH_CONNECT";
-        if (Permission.HasUserAuthorizedPermission(perm))
+        const string connect = "android.permission.BLUETOOTH_CONNECT";
+        const string scan = "android.permission.BLUETOOTH_SCAN";
+
+        bool hasConnect = Permission.HasUserAuthorizedPermission(connect);
+        bool hasScan = Permission.HasUserAuthorizedPermission(scan);
+        if (hasConnect && hasScan)
             return true;
 
         if (!_permissionAsked)
         {
             _permissionAsked = true;
-            Permission.RequestUserPermission(perm);
+            if (!hasConnect)
+                Permission.RequestUserPermission(connect);
+            if (!hasScan)
+                Permission.RequestUserPermission(scan);
         }
 
-        return Permission.HasUserAuthorizedPermission(perm);
+        return Permission.HasUserAuthorizedPermission(connect);
     }
 #endif
 }

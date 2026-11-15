@@ -18,12 +18,12 @@ This project explores grounded haptic feedback for VR: when you move your arm in
 - **Headset** — Meta Quest 3
 - **Software** — Unity 6 (URP) + OpenXR / Meta XR + XR Interaction Toolkit
 
-## Quest 3 torque MVP
+## Quest 3 force MVP
 
-Grab boxes with the right hand; command elbow torque from box mass:
+Grab boxes with the right hand; command force (Newtons) from box mass:
 
 ```text
-torqueNm = massKg * torquePerKg
+forceN = massKg * 9.81
 ```
 
 | Path | Purpose |
@@ -31,11 +31,11 @@ torqueNm = massKg * torquePerKg
 | [`Assets/Scripts/ElbowTorque/`](Assets/Scripts/ElbowTorque/) | C# scripts (`BoxMass`, `ElbowTorqueOutput`, grab bridge) |
 | [`Docs/QUEST3_TORQUE_MVP_SETUP.md`](Docs/QUEST3_TORQUE_MVP_SETUP.md) | Packages, Editor wiring, Quest build checklist |
 | [`Docs/LINUX_QUEST3_DEPLOY.md`](Docs/LINUX_QUEST3_DEPLOY.md) | Build APK on Linux and install/run on Quest 3 via adb |
-| [`arduino/TorquePrint/`](arduino/TorquePrint/) | UNO Q sketch: HC-06 on `Serial1` → print torque via `Monitor` |
-| [`Assets/Scripts/Brace/`](Assets/Scripts/Brace/) | Quest Bluetooth Classic SPP client (`BraceBluetoothClient`) |
-| [`Docs/QUEST3_HC06_TORQUE.md`](Docs/QUEST3_HC06_TORQUE.md) | Pair HC-06 on Quest, wire Unity, build APK, verify prints |
+| [`arduino/TorquePrint/`](arduino/TorquePrint/) | UNO Q MCU sketch + Wi-Fi hotspot TCP server (`python/main.py`) |
+| [`Assets/Scripts/Brace/`](Assets/Scripts/Brace/) | Quest TCP client (`BraceTcpClient`) for the UNO Q hotspot |
+| [`Docs/QUEST3_HC06_TORQUE.md`](Docs/QUEST3_HC06_TORQUE.md) | Hotspot + TCP setup, Quest join, verify prints |
 
-**Brace path:** `ElbowTorqueOutput.PublishTorque` → `BraceBluetoothClient.SendTorque` → HC-06 → UNO Q. See the HC-06 doc for Quest pairing and scene setup.
+**Brace path:** `ElbowTorqueOutput` → `BraceTcpClient.SendForce` → UNO Q hotspot TCP → Bridge → MCU (`forceN=`).
 
 ## Status
 

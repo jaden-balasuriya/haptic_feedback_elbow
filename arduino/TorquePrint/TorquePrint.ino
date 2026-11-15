@@ -1,65 +1,53 @@
 /*
- * TorquePrint — receive elbow torque commands over HC-06 UART and print them.
+ * TorquePrint — receive force (Newtons) over UNO Q Wi-Fi and print it.
  *
- * Target board: Arduino UNO Q (STM32U585 MCU + Qualcomm Linux MPU)
+ * Path:
+ *   Quest TCP → UNO Q Linux (python/main.py :7777) → Bridge RPC → this MCU sketch → Monitor
  *
- * Wiring (UNO Q — 3.3 V logic):
- *   HC-06 VCC  -> 3.3V
- *   HC-06 GND  -> GND
- *   HC-06 TXD  -> D0  (Serial1 RX)
- *   HC-06 RXD  -> D1  (Serial1 TX)
+ * Protocol: one ASCII line per command, e.g. "9.810\n"
+ * Do NOT open Serial1 here — RouterBridge owns it (/dev/ttyHS1 on Linux).
  *
- * Protocol: one ASCII line per command, newline-terminated, e.g. "5.000\n"
- * Debug output: Monitor (Router Bridge → App Lab / IDE Serial Monitor)
- * HC-06 UART: Serial1 @ 9600 8N1 (factory default)
- *
- * FQBN: arduino:zephyr:uno_q
- * Requires: Arduino_RouterBridge library
+ * FQBN: arduino:zephyr:unoq
  */
 
 #include <Arduino_RouterBridge.h>
 
-const long BT_BAUD = 9600;
 const size_t LINE_BUF_SIZE = 64;
 
-char lineBuf[LINE_BUF_SIZE];
-size_t lineLen = 0;
+char pendingLine[LINE_BUF_SIZE];
+volatile bool hasPending = false;
+
+// Called from Linux Python via Bridge.call("on_force_line", "...").
+// Only copy data here — never call Monitor/Bridge from inside an RPC callback.
+void on_force_line(String line)
+{
+  size_t n = line.length();
+  if (n + 1 > LINE_BUF_SIZE)
+    n = LINE_BUF_SIZE - 1;
+
+  for (size_t i = 0; i < n; i++)
+    pendingLine[i] = line.charAt(i);
+  pendingLine[n] = '\0';
+  hasPending = true;
+}
 
 void setup()
 {
+  Bridge.begin();
   Monitor.begin();
-  Serial1.begin(BT_BAUD);
 
-  Monitor.println(F("TorquePrint ready (UNO Q)"));
-  Monitor.println(F("Waiting for torque lines on Serial1 / HC-06 (9600)..."));
+  Bridge.provide_safe("on_force_line", on_force_line);
+
+  Monitor.println(F("ForcePrint ready (UNO Q Wi-Fi / Bridge)"));
+  Monitor.println(F("Waiting for force lines (N) from python/main.py ..."));
 }
 
 void loop()
 {
-  while (Serial1.available() > 0)
-  {
-    char c = (char)Serial1.read();
+  if (!hasPending)
+    return;
 
-    if (c == '\n' || c == '\r')
-    {
-      if (lineLen == 0)
-        continue;
-
-      lineBuf[lineLen] = '\0';
-      Monitor.print(F("torqueNm="));
-      Monitor.println(lineBuf);
-      lineLen = 0;
-      continue;
-    }
-
-    if (lineLen + 1 < LINE_BUF_SIZE)
-    {
-      lineBuf[lineLen++] = c;
-    }
-    else
-    {
-      // Overflow: drop the line and resync on next newline.
-      lineLen = 0;
-    }
-  }
+  hasPending = false;
+  Monitor.print(F("forceN="));
+  Monitor.println(pendingLine);
 }

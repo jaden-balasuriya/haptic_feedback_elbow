@@ -126,8 +126,8 @@ If Unity’s **Build And Run** worked, you can skip the manual `adb install`.
 2. Open the app library → filter **Unknown Sources** (or **Sources → Unknown sources**).
 3. Launch **HapticFeedbackArm** (product name from Player Settings).
 4. Grab a box with the **right** controller:
-   - Head-locked HUD: `Elbow Torque: X.X Nm`
-5. Release → `0.0 Nm`.
+   - Head-locked HUD: `Force: X.X N`
+5. Release → `0.0 N`.
 
 There is no Unity Console on-device unless you use logcat:
 
@@ -135,7 +135,7 @@ There is no Unity Console on-device unless you use logcat:
 adb logcat -s Unity
 ```
 
-Look for lines like `[ElbowTorque] … Nm`.
+Look for lines like `[ElbowForce] … N`.
 
 ---
 
