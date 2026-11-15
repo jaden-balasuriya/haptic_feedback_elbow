@@ -1,8 +1,8 @@
 using UnityEngine;
 
 /// <summary>
-/// Hides the host cube mesh and tints Handle / Plate children so each mass
-/// has a distinct color (1 kg / 3 kg / 10 kg).
+/// Hides the host cube mesh and tints Handle / Plate children.
+/// Scene startup keeps only the purple 10 kg dumbbell.
 /// </summary>
 [DisallowMultipleComponent]
 [RequireComponent(typeof(BoxMass))]
@@ -14,10 +14,28 @@ public class DumbbellVisual : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void EnableAllInScene()
     {
+        // Keep only the purple 10 kg dumbbell; remove 1 kg / 3 kg (and any other masses).
+        var boxes = FindObjectsByType<BoxMass>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        foreach (var box in boxes)
+        {
+            if (box == null)
+                continue;
+            bool isDumbbell = box.GetComponent<DumbbellVisual>() != null
+                || box.name.IndexOf("Dumbbell", System.StringComparison.OrdinalIgnoreCase) >= 0;
+            if (!isDumbbell)
+                continue;
+            // Purple = 10 kg.
+            if (box.massKg >= 9f)
+                continue;
+            Object.Destroy(box.gameObject);
+        }
+
         // SampleScene ships with DumbbellVisual disabled — turn on and tint.
         var visuals = FindObjectsByType<DumbbellVisual>(FindObjectsInactive.Include, FindObjectsSortMode.None);
         foreach (var v in visuals)
         {
+            if (v == null)
+                continue;
             if (!v.enabled)
                 v.enabled = true;
             v.ApplyFromMass();

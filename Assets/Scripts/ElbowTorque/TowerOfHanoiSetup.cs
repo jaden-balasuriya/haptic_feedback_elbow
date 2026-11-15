@@ -33,11 +33,13 @@ public class TowerOfHanoiSetup : MonoBehaviour
 
     readonly List<Stack<HanoiDisc>> _pegs = new List<Stack<HanoiDisc>>();
     readonly List<Transform> _pegRoots = new List<Transform>();
+    readonly List<HanoiDisc> _discs = new List<HanoiDisc>();
     Material _rodMat;
     Material _discMat;
     Material _tableMat;
 
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+    // Disabled — replaced by archery targets (ArcheryTargetSetup).
+    // [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void Bootstrap()
     {
         if (FindFirstObjectByType<TowerOfHanoiSetup>() != null)
@@ -122,10 +124,49 @@ public class TowerOfHanoiSetup : MonoBehaviour
 
         var disc = go.AddComponent<HanoiDisc>();
         disc.Init(this, sizeIndex);
+        _discs.Add(disc);
         PlaceOnPeg(disc, pegIndex, animate: false);
 
         grab.selectEntered.AddListener(_ => disc.OnPickedUp());
         grab.selectExited.AddListener(_ => disc.OnReleased());
+    }
+
+    /// <summary>Return every disc to the starting stack on peg 0 (largest at bottom).</summary>
+    public void ResetPuzzle()
+    {
+        foreach (var disc in _discs)
+        {
+            if (disc == null)
+                continue;
+            var grab = disc.GetComponent<XRGrabInteractable>();
+            if (grab != null && grab.isSelected && grab.interactionManager != null)
+            {
+                var selecting = new List<IXRSelectInteractor>(grab.interactorsSelecting);
+                foreach (var interactor in selecting)
+                {
+                    if (interactor != null)
+                        grab.interactionManager.SelectExit(interactor, grab);
+                }
+            }
+        }
+
+        for (int i = 0; i < _pegs.Count; i++)
+            _pegs[i].Clear();
+
+        foreach (var disc in _discs)
+        {
+            if (disc == null)
+                continue;
+            disc.PegIndex = -1;
+        }
+
+        // Largest first (same as initial spawn order).
+        var ordered = new List<HanoiDisc>(_discs);
+        ordered.Sort((a, b) => b.SizeIndex.CompareTo(a.SizeIndex));
+        foreach (var disc in ordered)
+            PlaceOnPeg(disc, pegIndex: 0, animate: false);
+
+        Debug.Log("[Hanoi] Reset to starting stack.");
     }
 
     public bool CanPlace(HanoiDisc disc, int pegIndex)

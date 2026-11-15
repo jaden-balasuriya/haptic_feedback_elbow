@@ -69,6 +69,10 @@ public class ElbowTorqueOutput : MonoBehaviour
     Camera _hudCamera;
     bool _hudParentedToCamera;
 
+    bool _motorOverrideActive;
+    float _motorOverridePwm;
+    string _motorOverrideLabel;
+
     /// <summary>Elbow joint torque (N·m) from the held mass.</summary>
     public float CurrentTorqueNm => currentTorqueNm;
 
@@ -86,6 +90,41 @@ public class ElbowTorqueOutput : MonoBehaviour
 
     /// <summary>MPU6050 roll (degrees) from the UNO Q, or NaN if not yet received.</summary>
     public float RollDeg => rollDeg;
+
+    /// <summary>True while an external system (e.g. bow draw) owns the motor PWM.</summary>
+    public bool HasMotorOverride => _motorOverrideActive;
+
+    /// <summary>
+    /// Elbow flexion from straight (deg): pot − elbowExtendedDeg. 0 ≈ straight; grows as the arm closes.
+    /// NaN if no pot reading yet.
+    /// </summary>
+    public float ElbowFlexionDeg
+    {
+        get
+        {
+            if (float.IsNaN(elbowAngleDeg))
+                return float.NaN;
+            return elbowAngleDeg - elbowExtendedDeg;
+        }
+    }
+
+    /// <summary>
+    /// Drive the L298N with an explicit PWM (0–255), skipping mass/IMU torque.
+    /// Used by bow draw so only the potentiometer (caller-side) matters.
+    /// </summary>
+    public void SetMotorOverride(float pwm, string label = null)
+    {
+        _motorOverrideActive = true;
+        _motorOverridePwm = Mathf.Clamp(pwm, 0f, 255f);
+        _motorOverrideLabel = label;
+    }
+
+    public void ClearMotorOverride()
+    {
+        _motorOverrideActive = false;
+        _motorOverridePwm = 0f;
+        _motorOverrideLabel = null;
+    }
 
     void Awake()
     {
@@ -140,6 +179,16 @@ public class ElbowTorqueOutput : MonoBehaviour
         rollDeg = braceTcp != null && braceTcp.HasRoll
             ? braceTcp.LastRollDeg
             : float.NaN;
+
+        if (_motorOverrideActive)
+        {
+            // Bow / external drive: PWM only — ignore held mass and IMU.
+            currentTorqueNm = 0f;
+            forearmFromDownDeg = float.NaN;
+            motorOutput = Mathf.Clamp(_motorOverridePwm, 0f, 255f);
+            PublishMotorCommand(currentTorqueNm, motorOutput);
+            return;
+        }
 
         currentTorqueNm = ComputeElbowTorqueNm(
             heldMassKg,
@@ -252,6 +301,14 @@ public class ElbowTorqueOutput : MonoBehaviour
 
         float maxOut = Mathf.Max(1f, maxMotorOutput);
         float motorPct = 100f * motorCmd / maxOut;
+
+        if (_motorOverrideActive)
+        {
+            string mode = string.IsNullOrEmpty(_motorOverrideLabel) ? "Override" : _motorOverrideLabel;
+            _hudText.text =
+                $"{mode}\nMotor: {motorPct:F0}%\nPWM: {motorCmd:F0}\n{netStatus}\n{angleLine}\n{rollLine}";
+            return;
+        }
 
         _hudText.text =
             $"Torque: {torqueNm:F2} N·m\nMotor: {motorPct:F0}%\nMass: {heldMassKg:F1} kg\n{netStatus}\n{angleLine}\n{rollLine}";
