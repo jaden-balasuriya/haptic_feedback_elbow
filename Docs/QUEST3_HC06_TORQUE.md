@@ -1,20 +1,27 @@
-# Quest 3 → UNO Q Wi-Fi hotspot → force (N)
+# Quest 3 ↔ UNO Q Wi-Fi hotspot → force (N) + elbow angle (°)
 
-Send **force in Newtons** from the Quest 3 Unity app to an **Arduino UNO Q** over a **Wi-Fi hotspot** hosted by the board. No HC-06 / Bluetooth SPP required.
+Bidirectional link over a **Wi-Fi hotspot** hosted by the **Arduino UNO Q**:
+
+- Quest → MCU: **force in Newtons** (from grabbed mass)
+- MCU → Quest: **elbow angle in degrees** (from a potentiometer on A0)
+
+No HC-06 / Bluetooth SPP required.
 
 ## Architecture
 
 ```text
 Quest 3 Unity APK
-  ElbowTorqueOutput  (forceN = massKg * 9.81)
-  BraceTcpClient     →  TCP 10.42.0.1:7777
+  ElbowTorqueOutput  (forceN = massKg * 9.81, HUD elbow angle)
+  BraceTcpClient     ↔  TCP 10.42.0.1:7777
         |
         v
   UNO Q Linux hotspot (SSID UNO-Q-Torque)
-  python/main.py     →  Bridge.call("on_force_line", "9.810")
-        |
+  python/main.py
+        |  Bridge.call("on_force_line", "9.810")
+        |  Bridge.call("get_elbow_angle") → "angleDeg=90.0"
         v
-  MCU sketch (TorquePrint.ino)  →  Monitor: forceN=9.810
+  MCU sketch (TorquePrint.ino)
+        pot A0 → angleDeg   /   Monitor: forceN=...
 ```
 
 Also on the UNO Q (for Quest networking):
@@ -23,7 +30,24 @@ Also on the UNO Q (for Quest networking):
 - `python/connectivity_shim.py` — HTTP `204` on `:80` so Android validates the hotspot
 - DNS overrides under `/etc/NetworkManager/dnsmasq-shared.d/` for connectivity checks
 
+## Potentiometer wiring (4-pin / 3-terminal)
+
+**Critical:** UNO Q analog pins are **3.3 V only** (not 5 V tolerant). Power the pot from **3.3V**, never from 5V.
+
+| Pot pin (typical 4-pin module) | Wire to UNO Q |
+|--------------------------------|---------------|
+| **VCC / + / 3V3** | **3.3V** |
+| **GND / −** | **GND** |
+| **SIG / OUT / S** (wiper) | **A0** |
+| **NC / SW** (4th pin, if present) | Leave unconnected (or digital pin if it is a switch) |
+
+On a bare 3-terminal potentiometer: one outer lug → 3.3V, other outer lug → GND, center (wiper) → A0.
+
+Firmware maps raw ADC `0…1023` → `0.0…270.0` degrees (`ANGLE_MIN_DEG` / `ANGLE_MAX_DEG` in `TorquePrint.ino`). Adjust those after mounting the brace.
+
 ## Message protocol
+
+**Quest → UNO Q (force):**
 
 ```text
 9.810\n
@@ -32,8 +56,16 @@ Also on the UNO Q (for Quest networking):
 - One ASCII line = force in **Newtons**
 - `F = massKg × 9.81` (release → `0.000\n`)
 
-**Port:** use **7777** (not 9000). Quest SELinux blocks untrusted apps from connecting to port 9000 (`webserver_port_t`).
+**UNO Q → Quest (elbow angle):**
 
+```text
+angleDeg=90.0\n
+```
+
+- One ASCII line ≈ 10 Hz while Quest is connected
+- HUD shows `Arm angle: 90.0 deg`
+
+**Port:** use **7777** (not 9000). Quest SELinux blocks untrusted apps from connecting to port 9000 (`webserver_port_t`).
 ## 1. Flash the MCU sketch
 
 From a PC with the board on USB:
@@ -107,8 +139,8 @@ Do **not** rely on campus Visitor Wi-Fi for this link (client isolation).
 
 | File | Role |
 |------|------|
-| `BraceTcpClient.cs` | TCP client → `10.42.0.1:7777`, sends force lines |
-| `ElbowTorqueOutput.cs` | `forceN = mass * 9.81`, HUD `Force: … N` |
+| `BraceTcpClient.cs` | TCP client → `10.42.0.1:7777`, sends force / receives `angleDeg=` |
+| `ElbowTorqueOutput.cs` | `forceN = mass * 9.81`, HUD `Elbow: … deg` + `Force: … N` |
 | `Assets/Plugins/Android/AndroidManifest.xml` | Internet / Wi-Fi permissions + GameActivity |
 | `arduino/TorquePrint/*` | MCU + Linux TCP/hotspot |
 
@@ -118,10 +150,11 @@ Build a **native APK** and install on Quest ([`LINUX_QUEST3_DEPLOY.md`](LINUX_QU
 
 ## 5. Verify
 
-1. HUD: `Force: X.X N` and `WiFi: Connected`
-2. Grab 1 kg dumbbell → about **9.8 N**
-3. On PC: `cat /dev/ttyACM0` → `forceN=9.810`
-4. Release → `forceN=0.000`
+1. HUD: `Arm angle: X.X deg`, `Force: X.X N`, and `WiFi: Connected`
+2. Turn the pot → HUD elbow angle updates; Monitor shows `angleDeg=...`
+3. Grab 1 kg dumbbell → about **9.8 N**
+4. On PC: `cat /dev/ttyACM0` → `forceN=9.810` and `angleDeg=...`
+5. Release → `forceN=0.000`
 
 ## Troubleshooting
 
@@ -135,8 +168,9 @@ Build a **native APK** and install on Quest ([`LINUX_QUEST3_DEPLOY.md`](LINUX_QU
 
 ## Checklist
 
-- [ ] `TorquePrint.ino` uploaded (`on_force_line` / `forceN=`)
-- [ ] Hotspot + TCP `:7777` + connshim running on UNO Q
+- [ ] Pot wired **3.3V / GND / A0** (not 5V)
+- [ ] `TorquePrint.ino` uploaded (`on_force_line` + `get_elbow_angle`)
+- [ ] Hotspot + TCP `:7777` + connshim running on UNO Q (updated `python/main.py`)
 - [ ] Quest joined `UNO-Q-Torque`
 - [ ] APK built with `BraceTcpClient` port **7777**
-- [ ] Grab → Monitor shows `forceN=...`
+- [ ] Grab → Monitor `forceN=...`; pot → HUD `Arm angle: … deg`

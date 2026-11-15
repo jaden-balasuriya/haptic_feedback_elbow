@@ -42,17 +42,22 @@ public class BraceTcpClient : MonoBehaviour
     [SerializeField] bool connected;
     [SerializeField] string lastError;
     [SerializeField] float lastSentForceN = float.NaN;
+    [SerializeField] float lastElbowAngleDeg = float.NaN;
 
     readonly object _gate = new object();
     TcpClient _client;
     NetworkStream _stream;
     Thread _connectThread;
+    Thread _receiveThread;
+    volatile bool _receiveRunning;
     float _sendInterval;
     float _sendTimer;
     float _reconnectTimer;
     float _pendingForceN;
     bool _hasPending;
     bool _connectInProgress;
+    float _latestElbowAngleDeg = float.NaN;
+    bool _hasElbowAngle;
 
     public bool IsConnected
     {
@@ -68,6 +73,29 @@ public class BraceTcpClient : MonoBehaviour
                 {
                     return false;
                 }
+            }
+        }
+    }
+
+    /// <summary>Latest elbow angle (degrees) from the UNO Q pot, or NaN if none yet.</summary>
+    public float LastElbowAngleDeg
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _hasElbowAngle ? _latestElbowAngleDeg : float.NaN;
+            }
+        }
+    }
+
+    public bool HasElbowAngle
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _hasElbowAngle;
             }
         }
     }
@@ -101,6 +129,7 @@ public class BraceTcpClient : MonoBehaviour
     void Update()
     {
         connected = IsConnected;
+        lastElbowAngleDeg = LastElbowAngleDeg;
         if (!connected)
             lastError = string.IsNullOrEmpty(lastError) ? "not connected" : lastError;
 
@@ -163,7 +192,8 @@ public class BraceTcpClient : MonoBehaviour
                 {
                     NoDelay = true,
                     SendTimeout = 3000,
-                    ReceiveTimeout = 3000
+                    // 0 = blocking read; receive thread owns lifetime of the socket.
+                    ReceiveTimeout = 0
                 };
 
                 IAsyncResult ar = client.BeginConnect(ip, port, null, null);
@@ -190,6 +220,7 @@ public class BraceTcpClient : MonoBehaviour
                     _stream = stream;
                 }
 
+                StartReceiveLoop(stream);
                 Debug.Log($"[BraceTCP] Connected to {targetHost}:{port}");
             }
             catch (Exception e)
@@ -212,6 +243,7 @@ public class BraceTcpClient : MonoBehaviour
 
     public void Disconnect()
     {
+        _receiveRunning = false;
         lock (_gate)
         {
             try { _stream?.Close(); } catch { /* ignore */ }
@@ -220,6 +252,93 @@ public class BraceTcpClient : MonoBehaviour
             _client = null;
         }
         connected = false;
+    }
+
+    void StartReceiveLoop(NetworkStream stream)
+    {
+        _receiveRunning = false;
+        try { _receiveThread?.Join(100); } catch { /* ignore */ }
+
+        _receiveRunning = true;
+        _receiveThread = new Thread(() => ReceiveLoop(stream))
+        {
+            IsBackground = true,
+            Name = "BraceTcpReceive"
+        };
+        _receiveThread.Start();
+    }
+
+    void ReceiveLoop(NetworkStream stream)
+    {
+        var buf = new byte[256];
+        var text = new StringBuilder();
+
+        while (_receiveRunning)
+        {
+            try
+            {
+                if (stream == null || !stream.CanRead)
+                    break;
+
+                int n = stream.Read(buf, 0, buf.Length);
+                if (n <= 0)
+                    break;
+
+                text.Append(Encoding.ASCII.GetString(buf, 0, n));
+                while (true)
+                {
+                    string s = text.ToString();
+                    int nl = s.IndexOf('\n');
+                    int cr = s.IndexOf('\r');
+                    if (nl < 0 && cr < 0)
+                        break;
+
+                    int idx;
+                    if (nl < 0)
+                        idx = cr;
+                    else if (cr < 0)
+                        idx = nl;
+                    else
+                        idx = Math.Min(nl, cr);
+
+                    string line = s.Substring(0, idx).Trim();
+                    text.Remove(0, idx + 1);
+                    HandleIncomingLine(line);
+                }
+            }
+            catch (Exception e)
+            {
+                if (_receiveRunning)
+                {
+                    lastError = e.Message;
+                    Debug.LogWarning($"[BraceTCP] Receive failed: {e.Message}");
+                }
+                break;
+            }
+        }
+
+        connected = false;
+    }
+
+    void HandleIncomingLine(string line)
+    {
+        if (string.IsNullOrEmpty(line))
+            return;
+
+        // Protocol from python/main.py: "angleDeg=90.0"
+        const string prefix = "angleDeg=";
+        if (line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            string num = line.Substring(prefix.Length).Trim();
+            if (float.TryParse(num, NumberStyles.Float, CultureInfo.InvariantCulture, out float deg))
+            {
+                lock (_gate)
+                {
+                    _latestElbowAngleDeg = deg;
+                    _hasElbowAngle = true;
+                }
+            }
+        }
     }
 
     public void SendForce(float forceN)

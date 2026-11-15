@@ -35,7 +35,10 @@ forceN = massKg * 9.81
 | [`Assets/Scripts/Brace/`](Assets/Scripts/Brace/) | Quest TCP client (`BraceTcpClient`) for the UNO Q hotspot |
 | [`Docs/QUEST3_HC06_TORQUE.md`](Docs/QUEST3_HC06_TORQUE.md) | Hotspot + TCP setup, Quest join, verify prints |
 
-**Brace path:** `ElbowTorqueOutput` → `BraceTcpClient.SendForce` → UNO Q hotspot TCP → Bridge → MCU (`forceN=`).
+**Brace path (bidirectional):**
+
+- Quest → MCU: `ElbowTorqueOutput` → `BraceTcpClient.SendForce` → hotspot TCP → Bridge → MCU (`forceN=`)
+- MCU → Quest: pot on **A0** → `get_elbow_angle` → TCP `angleDeg=` → HUD `Arm angle: … deg`
 
 ## Status
 

@@ -36,6 +36,7 @@ public class ElbowTorqueOutput : MonoBehaviour
     [Header("Runtime (read-only)")]
     [SerializeField] float heldMassKg;
     [SerializeField] float currentForceN;
+    [SerializeField] float elbowAngleDeg = float.NaN;
 
     float _logTimer;
     Transform _hudRoot;
@@ -49,6 +50,9 @@ public class ElbowTorqueOutput : MonoBehaviour
 
     /// <summary>Mass of the box currently held by the right hand, or 0.</summary>
     public float HeldMassKg => heldMassKg;
+
+    /// <summary>Elbow angle (degrees) from the UNO Q potentiometer, or NaN if not yet received.</summary>
+    public float ElbowAngleDeg => elbowAngleDeg;
 
     void Awake()
     {
@@ -92,6 +96,11 @@ public class ElbowTorqueOutput : MonoBehaviour
         }
 
         currentForceN = heldMassKg * Mathf.Max(0f, gravityMetersPerSecSq);
+        if (braceTcp == null)
+            braceTcp = GetComponent<BraceTcpClient>() ?? BraceTcpClient.Instance;
+        elbowAngleDeg = braceTcp != null && braceTcp.HasElbowAngle
+            ? braceTcp.LastElbowAngleDeg
+            : float.NaN;
         PublishForce(currentForceN);
     }
 
@@ -128,7 +137,11 @@ public class ElbowTorqueOutput : MonoBehaviour
             ? "WiFi: Connected"
             : "WiFi: Not connected";
 
-        _hudText.text = $"Force: {forceN:F1} N\nMass: {heldMassKg:F1} kg\n{netStatus}";
+        string angleLine = float.IsNaN(elbowAngleDeg)
+            ? "Arm angle: --.- deg"
+            : $"Arm angle: {elbowAngleDeg:F1} deg";
+
+        _hudText.text = $"Force: {forceN:F1} N\nMass: {heldMassKg:F1} kg\n{netStatus}\n{angleLine}";
     }
 
     void MaybeLog(float forceN)
@@ -160,7 +173,7 @@ public class ElbowTorqueOutput : MonoBehaviour
             _labelTransform.localPosition = Vector3.zero;
 
             _hudText = labelGo.AddComponent<TextMesh>();
-            _hudText.text = "Force: 0.0 N\nMass: 0.0 kg\nWiFi: Not connected";
+            _hudText.text = "Force: 0.0 N\nMass: 0.0 kg\nWiFi: Not connected\nArm angle: --.- deg";
             _hudText.fontSize = 42;
             _hudText.characterSize = 0.01f;
             _hudText.anchor = TextAnchor.MiddleCenter;
