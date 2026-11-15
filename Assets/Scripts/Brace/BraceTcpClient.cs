@@ -43,6 +43,7 @@ public class BraceTcpClient : MonoBehaviour
     [SerializeField] string lastError;
     [SerializeField] float lastSentForceN = float.NaN;
     [SerializeField] float lastElbowAngleDeg = float.NaN;
+    [SerializeField] float lastPitchDeg = float.NaN;
 
     readonly object _gate = new object();
     TcpClient _client;
@@ -58,6 +59,8 @@ public class BraceTcpClient : MonoBehaviour
     bool _connectInProgress;
     float _latestElbowAngleDeg = float.NaN;
     bool _hasElbowAngle;
+    float _latestPitchDeg = float.NaN;
+    bool _hasPitch;
 
     public bool IsConnected
     {
@@ -100,6 +103,29 @@ public class BraceTcpClient : MonoBehaviour
         }
     }
 
+    /// <summary>Latest MPU6050 pitch (degrees, tilt vs ground) from the UNO Q, or NaN if none yet.</summary>
+    public float LastPitchDeg
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _hasPitch ? _latestPitchDeg : float.NaN;
+            }
+        }
+    }
+
+    public bool HasPitch
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _hasPitch;
+            }
+        }
+    }
+
     void Awake()
     {
         if (Instance != null && Instance != this)
@@ -130,6 +156,7 @@ public class BraceTcpClient : MonoBehaviour
     {
         connected = IsConnected;
         lastElbowAngleDeg = LastElbowAngleDeg;
+        lastPitchDeg = LastPitchDeg;
         if (!connected)
             lastError = string.IsNullOrEmpty(lastError) ? "not connected" : lastError;
 
@@ -325,20 +352,34 @@ public class BraceTcpClient : MonoBehaviour
         if (string.IsNullOrEmpty(line))
             return;
 
-        // Protocol from python/main.py: "angleDeg=90.0"
-        const string prefix = "angleDeg=";
-        if (line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        // Protocol from python/main.py: "angleDeg=90.0" / "pitchDeg=12.3"
+        if (TryParsePrefixedFloat(line, "angleDeg=", out float angleDeg))
         {
-            string num = line.Substring(prefix.Length).Trim();
-            if (float.TryParse(num, NumberStyles.Float, CultureInfo.InvariantCulture, out float deg))
+            lock (_gate)
             {
-                lock (_gate)
-                {
-                    _latestElbowAngleDeg = deg;
-                    _hasElbowAngle = true;
-                }
+                _latestElbowAngleDeg = angleDeg;
+                _hasElbowAngle = true;
+            }
+            return;
+        }
+
+        if (TryParsePrefixedFloat(line, "pitchDeg=", out float pitchDeg))
+        {
+            lock (_gate)
+            {
+                _latestPitchDeg = pitchDeg;
+                _hasPitch = true;
             }
         }
+    }
+
+    static bool TryParsePrefixedFloat(string line, string prefix, out float value)
+    {
+        value = 0f;
+        if (!line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            return false;
+        string num = line.Substring(prefix.Length).Trim();
+        return float.TryParse(num, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
     }
 
     public void SendForce(float forceN)
