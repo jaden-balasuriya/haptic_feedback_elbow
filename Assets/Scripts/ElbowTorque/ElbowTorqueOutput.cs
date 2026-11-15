@@ -2,7 +2,7 @@ using UnityEngine;
 
 /// <summary>
 /// Owns held-mass → elbow joint torque (N·m) for the brace.
-/// Uses hand weight, upper-arm pitch (MPU), and elbow angle (pot).
+/// Uses hand weight, upper-arm roll (MPU), and elbow angle (pot).
 /// Sent to the UNO Q as the TCP <c>forceN</c> field (numeric value = torque N·m).
 /// See Docs/ELBOW_TORQUE_CALCULATION.md.
 /// </summary>
@@ -18,11 +18,11 @@ public class ElbowTorqueOutput : MonoBehaviour
     [Min(0.05f)]
     public float forearmLengthMeters = 0.27f;
 
-    [Tooltip("Pot reading (deg) when the elbow is fully extended (straight). Flexion = this − angleDeg.")]
-    public float elbowExtendedDeg = 180f;
+    [Tooltip("Pot reading (deg) when the elbow is fully extended (straight). Flexion = angleDeg − this (increases as arm closes).")]
+    public float elbowExtendedDeg = 100f;
 
-    [Tooltip("Subtracted from MPU pitch so 0 = upper arm straight down. pitch_used = pitchDeg − offset.")]
-    public float pitchDownOffsetDeg = 0f;
+    [Tooltip("Subtracted from MPU roll so 0 = upper arm straight down. roll_used = rollDeg − offset. This mount reads about -90° when hanging down.")]
+    public float rollDownOffsetDeg = -90f;
 
     [Header("Motor output (L298N)")]
     [Tooltip("Elbow torque (N·m) at which the motor reaches Max Motor Output. Above this, output stays maxed.")]
@@ -31,7 +31,7 @@ public class ElbowTorqueOutput : MonoBehaviour
 
     [Tooltip("Max PWM duty sent to the UNO Q / L298N (0–255). Linear from 0 at τ=0 up to this at Torque At Max.")]
     [Range(0f, 255f)]
-    public float maxMotorOutput = 255f;
+    public float maxMotorOutput = 100f;
 
     [Header("Brace network (UNO Q hotspot)")]
     [Tooltip("Assign BraceTcpClient on this GameObject (or leave empty to use GetComponent / Instance).")]
@@ -59,7 +59,7 @@ public class ElbowTorqueOutput : MonoBehaviour
     [SerializeField] float currentTorqueNm;
     [SerializeField] float motorOutput;
     [SerializeField] float elbowAngleDeg = float.NaN;
-    [SerializeField] float pitchDeg = float.NaN;
+    [SerializeField] float rollDeg = float.NaN;
     [SerializeField] float forearmFromDownDeg = float.NaN;
 
     float _logTimer;
@@ -84,8 +84,8 @@ public class ElbowTorqueOutput : MonoBehaviour
     /// <summary>Elbow angle (degrees) from the UNO Q potentiometer, or NaN if not yet received.</summary>
     public float ElbowAngleDeg => elbowAngleDeg;
 
-    /// <summary>MPU6050 pitch (degrees) from the UNO Q, or NaN if not yet received.</summary>
-    public float PitchDeg => pitchDeg;
+    /// <summary>MPU6050 roll (degrees) from the UNO Q, or NaN if not yet received.</summary>
+    public float RollDeg => rollDeg;
 
     void Awake()
     {
@@ -96,6 +96,9 @@ public class ElbowTorqueOutput : MonoBehaviour
         }
 
         Instance = this;
+
+        // This MPU mount reads ≈ -90° raw when the upper arm hangs straight down.
+        rollDownOffsetDeg = -90f;
 
         if (braceTcp == null)
             braceTcp = GetComponent<BraceTcpClient>() ?? BraceTcpClient.Instance;
@@ -134,13 +137,13 @@ public class ElbowTorqueOutput : MonoBehaviour
         elbowAngleDeg = braceTcp != null && braceTcp.HasElbowAngle
             ? braceTcp.LastElbowAngleDeg
             : float.NaN;
-        pitchDeg = braceTcp != null && braceTcp.HasPitch
-            ? braceTcp.LastPitchDeg
+        rollDeg = braceTcp != null && braceTcp.HasRoll
+            ? braceTcp.LastRollDeg
             : float.NaN;
 
         currentTorqueNm = ComputeElbowTorqueNm(
             heldMassKg,
-            pitchDeg,
+            rollDeg,
             elbowAngleDeg,
             out forearmFromDownDeg);
         motorOutput = TorqueToMotorOutput(currentTorqueNm);
@@ -160,11 +163,11 @@ public class ElbowTorqueOutput : MonoBehaviour
 
     /// <summary>
     /// τ = m g L |sin(θ_forearm)| with θ_forearm = θ_upper + flexion.
-    /// Returns 0 if mass is 0 or pitch/elbow sensors are missing.
+    /// Returns 0 if mass is 0 or roll/elbow sensors are missing.
     /// </summary>
     public float ComputeElbowTorqueNm(
         float massKg,
-        float pitchRawDeg,
+        float rollRawDeg,
         float elbowRawDeg,
         out float forearmFromDownDegrees)
     {
@@ -173,14 +176,15 @@ public class ElbowTorqueOutput : MonoBehaviour
         if (massKg <= 0f)
             return 0f;
 
-        if (float.IsNaN(pitchRawDeg) || float.IsNaN(elbowRawDeg))
+        if (float.IsNaN(rollRawDeg) || float.IsNaN(elbowRawDeg))
             return 0f;
 
         // θ_u: upper arm from downward vertical (0 = straight down).
-        float thetaUpperDeg = pitchRawDeg - pitchDownOffsetDeg;
+        float thetaUpperDeg = rollRawDeg - rollDownOffsetDeg;
 
-        // θ_flex: 0 = fully extended, 90 = right angle (pot = interior angle).
-        float flexionDeg = elbowExtendedDeg - elbowRawDeg;
+        // θ_flex: 0 = fully extended. Pot reads elbowExtendedDeg when straight and
+        // increases as the arm closes (e.g. 100 → larger).
+        float flexionDeg = elbowRawDeg - elbowExtendedDeg;
 
         // Forearm absolute angle from downward vertical (sagittal).
         float thetaForearmDeg = thetaUpperDeg + flexionDeg;
@@ -229,19 +233,28 @@ public class ElbowTorqueOutput : MonoBehaviour
             ? "WiFi: Connected"
             : "WiFi: Not connected";
 
-        string angleLine = float.IsNaN(elbowAngleDeg)
-            ? "Arm angle: --.- deg"
-            : $"Arm angle: {elbowAngleDeg:F1} deg";
+        // Show flexion from straight (0° = extended). Pot ≈ elbowExtendedDeg when straight.
+        string angleLine;
+        if (float.IsNaN(elbowAngleDeg))
+        {
+            angleLine = "Arm angle: --.- deg";
+        }
+        else
+        {
+            float flexionShown = elbowAngleDeg - elbowExtendedDeg;
+            angleLine = $"Arm angle: {flexionShown:F1} deg";
+        }
 
-        string pitchLine = float.IsNaN(pitchDeg)
-            ? "Pitch: --.- deg"
-            : $"Pitch: {pitchDeg:F1} deg";
+        // Show roll relative to straight-down (0° after rollDownOffsetDeg).
+        string rollLine = float.IsNaN(rollDeg)
+            ? "Roll: --.- deg"
+            : $"Roll: {(rollDeg - rollDownOffsetDeg):F1} deg";
 
         float maxOut = Mathf.Max(1f, maxMotorOutput);
         float motorPct = 100f * motorCmd / maxOut;
 
         _hudText.text =
-            $"Torque: {torqueNm:F2} N·m\nMotor: {motorPct:F0}%\nMass: {heldMassKg:F1} kg\n{netStatus}\n{angleLine}\n{pitchLine}";
+            $"Torque: {torqueNm:F2} N·m\nMotor: {motorPct:F0}%\nMass: {heldMassKg:F1} kg\n{netStatus}\n{angleLine}\n{rollLine}";
     }
 
     void MaybeLog(float torqueNm, float motorCmd)
@@ -276,7 +289,7 @@ public class ElbowTorqueOutput : MonoBehaviour
 
             _hudText = labelGo.AddComponent<TextMesh>();
             _hudText.text =
-                "Torque: 0.00 N·m\nMotor: 0%\nMass: 0.0 kg\nWiFi: Not connected\nArm angle: --.- deg\nPitch: --.- deg";
+                "Torque: 0.00 N·m\nMotor: 0%\nMass: 0.0 kg\nWiFi: Not connected\nArm angle: --.- deg\nRoll: --.- deg";
             _hudText.fontSize = 42;
             _hudText.characterSize = 0.01f;
             _hudText.anchor = TextAnchor.MiddleCenter;

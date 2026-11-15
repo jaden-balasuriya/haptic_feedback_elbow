@@ -1,6 +1,6 @@
 # Elbow joint torque calculation (Quest)
 
-Quest-side model that turns **hand weight**, **upper-arm pitch** (MPU6050), and **elbow angle** (potentiometer) into **elbow joint torque** \(\tau\) in **N·m**.
+Quest-side model that turns **hand weight**, **upper-arm roll** (MPU6050), and **elbow angle** (potentiometer) into **elbow joint torque** \(\tau\) in **N·m**.
 
 That torque is what the HUD shows and what is sent to the UNO Q as the TCP `forceN=` field (same wire format; the number means torque, not linear Newtons).
 
@@ -13,16 +13,16 @@ Implementation: `Assets/Scripts/ElbowTorque/ElbowTorqueOutput.cs`.
 | Input | Source | Convention |
 |-------|--------|------------|
 | Hand mass \(m\) | Grabbed `BoxMass` (kg) | 0 when nothing held |
-| Upper-arm pitch \(\theta_u\) | MPU on upper arm → TCP `pitchDeg=` | **0° = upper arm straight down**; increases as the upper arm raises forward |
-| Elbow angle | Pot → TCP `angleDeg=` | Treated as **interior joint angle** (≈180° fully extended / straight) |
+| Upper-arm roll \(\theta_u\) | MPU on upper arm → TCP `rollDeg=` | **0° = upper arm straight down**; increases as the upper arm raises forward |
+| Elbow angle | Pot → TCP `angleDeg=` | **100° when straight**; **increases as the arm closes** |
 
 Inspector knobs on `ElbowTorqueOutput`:
 
 | Field | Default | Meaning |
 |-------|---------|---------|
 | `forearmLengthMeters` | `0.27` | Elbow → hand length \(L\) (m). ≈ average adult forearm + grip |
-| `elbowExtendedDeg` | `180` | Pot reading at full extension. Flexion \(=\) this − `angleDeg` |
-| `pitchDownOffsetDeg` | `0` | Calibration: `θ_u = pitchDeg − offset` so 0 = straight down |
+| `elbowExtendedDeg` | `100` | Pot reading at full extension. Flexion \(=\) `angleDeg` − this |
+| `rollDownOffsetDeg` | `-90` | Calibration: `θ_u = rollDeg − offset` so 0 = straight down (this mount reads ≈ −90° raw when hanging) |
 | `gravityMetersPerSecSq` | `9.81` | \(g\) |
 
 If pitch or elbow angle has not been received yet, \(\tau = 0\) (cannot form the pose).
@@ -47,14 +47,16 @@ If pitch or elbow angle has not been received yet, \(\tau = 0\) (cannot form the
 1. **Upper arm from down**
 
    \[
-   \theta_u = \texttt{pitchDeg} - \texttt{pitchDownOffsetDeg}
+   \theta_u = \texttt{rollDeg} - \texttt{rollDownOffsetDeg}
    \]
 
-2. **Elbow flexion from full extension** (0° = straight, 90° = right angle)
+2. **Elbow flexion from full extension** (0° = straight; grows as the arm closes)
 
    \[
-   \theta_{\mathrm{flex}} = \texttt{elbowExtendedDeg} - \texttt{angleDeg}
+   \theta_{\mathrm{flex}} = \texttt{angleDeg} - \texttt{elbowExtendedDeg}
    \]
+
+   Example: straight ≈ `100`, closing toward a right angle ≈ `190` → \(\theta_{\mathrm{flex}} \approx 90°\).
 
 3. **Forearm from down**
 
@@ -100,7 +102,7 @@ Units: \(m\) in kg, \(g\) in m/s², \(L\) in m → \(\tau\) in **N·m**.
 
 - \(m = 1\,\mathrm{kg}\), \(g = 9.81\), \(L = 0.27\,\mathrm{m}\)
 - Upper arm horizontal: \(\theta_u = 90°\)
-- Elbow flexed 90° from straight: \(\theta_{\mathrm{flex}} = 90°\) → pot `angleDeg = 90` if `elbowExtendedDeg = 180`
+- Elbow flexed 90° from straight: \(\theta_{\mathrm{flex}} = 90°\) → pot `angleDeg = 190` if `elbowExtendedDeg = 100`
 - \(\theta_f = 180°\), \(\lvert\sin 180°\rvert = 0\) → \(\tau = 0\) (forearm pointing straight up)
 
 Another case — upper arm down, elbow 90°:
@@ -121,7 +123,7 @@ u = \mathrm{clamp}\!\left(\frac{\tau}{\tau_{\mathrm{sat}}}\, u_{\max},\; 0,\; u_
 | Inspector field | Symbol | Default | Meaning |
 |-----------------|--------|---------|---------|
 | `torqueAtMaxMotorNm` | \(\tau_{\mathrm{sat}}\) | `5` | Torque (N·m) at which motor hits max |
-| `maxMotorOutput` | \(u_{\max}\) | `255` | Max PWM (0–255) sent to the UNO Q |
+| `maxMotorOutput` | \(u_{\max}\) | `100` | Max PWM (0–255) sent to the UNO Q |
 
 - \(\tau = 0\) → motor off  
 - \(0 < \tau < \tau_{\mathrm{sat}}\) → linear  
@@ -147,7 +149,7 @@ Direction is fixed in firmware (`IN1=HIGH`, `IN2=LOW`). Swap motor leads or inve
 
 ```text
 Grab mass (kg)
-  + pitchDeg (MPU upper arm)
+  + rollDeg (MPU upper arm)
   + angleDeg (elbow pot)
        │
        ▼
@@ -165,8 +167,8 @@ TorqueToMotorOutput()  →  PWM 0..maxMotorOutput
 
 ## Calibration tips
 
-1. **Pitch zero:** Hold the upper arm straight down. Note `pitchDeg` on the HUD/serial. Set `pitchDownOffsetDeg` to that value so \(\theta_u \approx 0\).
-2. **Elbow extended:** Fully straighten the elbow; set `elbowExtendedDeg` to the pot’s `angleDeg` reading (often near 180).
+1. **Roll zero:** Hold the upper arm straight down. Raw `rollDeg` on this mount is about **−90°**; default `rollDownOffsetDeg = -90` makes \(\theta_u \approx 0\). Adjust the offset if your zero drifts.
+2. **Elbow extended:** Fully straighten the elbow; set `elbowExtendedDeg` to the pot’s `angleDeg` reading (this brace ≈ **100**).
 3. **Forearm length:** Measure elbow axis → center of the held object; put that in `forearmLengthMeters` if 0.27 m is off.
 
 ---
@@ -175,5 +177,5 @@ TorqueToMotorOutput()  →  PWM 0..maxMotorOutput
 
 - Sagittal-plane model only (no shoulder rotation / abduction in the torque).
 - Weight acts at the hand along gravity; forearm mass and dynamics are ignored (static gravity torque on the held mass).
-- Pot is assumed to report **interior** elbow angle; if your mount is “0 = flexed”, change `elbowExtendedDeg` / mapping accordingly.
+- Pot increases as the arm closes; calibrate `elbowExtendedDeg` to the straight-arm reading.
 - TCP field name remains `forceN` for MCU compatibility; semantics on Quest are **joint torque (N·m)**.

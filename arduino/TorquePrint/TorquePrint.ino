@@ -1,5 +1,5 @@
 /*
- * TorquePrint — Quest motor PWM → L298N; elbow angle + MPU pitch → Quest.
+ * TorquePrint — Quest motor PWM → L298N; elbow angle + MPU roll → Quest.
  *
  * Paths:
  *   Quest TCP → UNO Q Linux (python/main.py :7777) → Bridge RPC → MCU (motor PWM)
@@ -7,7 +7,7 @@
  *
  * Motor protocol: one ASCII line = PWM 0..255, e.g. "180.000\n"
  *   (Quest maps elbow torque N·m → PWM; see ElbowTorqueOutput motor tuning.)
- * Angle protocol: "angleDeg=90.0\n" and "pitchDeg=12.3\n"
+ * Angle protocol: "angleDeg=90.0\n" and "rollDeg=12.3\n"
  *
  * L298N (single motor):
  *   ENA → D9 (PWM)   IN1 → D7   IN2 → D8
@@ -60,7 +60,7 @@ volatile bool hasPending = false;
 
 volatile int latestRaw = 0;
 volatile float latestAngleDeg = 0.0f;
-volatile float latestPitchDeg = 0.0f;
+volatile float latestRollDeg = 0.0f;
 
 float latestMotorPwm = 0.0f;
 
@@ -203,11 +203,11 @@ bool mpuBegin()
     return false;
   }
   mpuFailStreak = 0;
-  Monitor.println(F("MPU: accel pitch ready (tilt vs ground)"));
+  Monitor.println(F("MPU: accel roll ready (tilt vs ground)"));
   return true;
 }
 
-void updatePitch()
+void updateRoll()
 {
   if (!mpuOk)
     return;
@@ -223,14 +223,11 @@ void updatePitch()
   }
   mpuFailStreak = 0;
 
-  // Pitch vs ground from gravity. Sideways mount OK — tip up/down to change it.
-  // +pitch ≈ nose up when +X points "forward" on the breakout.
-  // Sitting flat (Z up) → pitch ≈ 0 by definition.
-  float ax = accelG[0];
+  // Roll vs ground from gravity. Calibrate with rollDownOffsetDeg so 0 = upper arm down.
   float ay = accelG[1];
   float az = accelG[2];
-  float pitch = atan2f(-ax, sqrtf(ay * ay + az * az)) * RAD2DEG;
-  latestPitchDeg = pitch;
+  float roll = atan2f(ay, az) * RAD2DEG;
+  latestRollDeg = roll;
 }
 
 void on_force_line(String line)
@@ -255,9 +252,9 @@ int get_elbow_raw()
   return latestRaw;
 }
 
-float get_pitch_deg()
+float get_roll_deg()
 {
-  return latestPitchDeg;
+  return latestRollDeg;
 }
 
 void applyMotorPwm(float cmd)
@@ -289,11 +286,11 @@ void setup()
   Bridge.provide_safe("on_force_line", on_force_line);
   Bridge.provide("get_elbow_angle", get_elbow_angle);
   Bridge.provide("get_elbow_raw", get_elbow_raw);
-  Bridge.provide("get_pitch_deg", get_pitch_deg);
+  Bridge.provide("get_roll_deg", get_roll_deg);
 
   mpuOk = mpuBegin();
 
-  Monitor.println(F("TorquePrint ready (motor PWM in + elbow/pitch out)"));
+  Monitor.println(F("TorquePrint ready (motor PWM in + elbow/roll out)"));
   Monitor.println(F("L298N: ENA=D9 IN1=D7 IN2=D8 | Pot A0 | MPU SDA/SCL D20/D21"));
 }
 
@@ -304,7 +301,7 @@ void loop()
   latestRaw = raw;
   latestAngleDeg = angle;
 
-  updatePitch();
+  updateRoll();
 
   if (hasPending)
   {
@@ -331,9 +328,9 @@ void loop()
     Monitor.print(mpuOk ? F("ok") : F("FAIL"));
     Monitor.print(F(" angleDeg="));
     Monitor.print(angle, 1);
-    Monitor.print(F(" pitchDeg="));
+    Monitor.print(F(" rollDeg="));
     if (mpuOk)
-      Monitor.print(latestPitchDeg, 1);
+      Monitor.print(latestRollDeg, 1);
     else
       Monitor.print(F("--.-"));
     Monitor.print(F(" motorPwm="));

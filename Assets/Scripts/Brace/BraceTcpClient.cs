@@ -43,7 +43,7 @@ public class BraceTcpClient : MonoBehaviour
     [SerializeField] string lastError;
     [SerializeField] float lastSentForceN = float.NaN;
     [SerializeField] float lastElbowAngleDeg = float.NaN;
-    [SerializeField] float lastPitchDeg = float.NaN;
+    [SerializeField] float lastRollDeg = float.NaN;
 
     readonly object _gate = new object();
     TcpClient _client;
@@ -59,8 +59,8 @@ public class BraceTcpClient : MonoBehaviour
     bool _connectInProgress;
     float _latestElbowAngleDeg = float.NaN;
     bool _hasElbowAngle;
-    float _latestPitchDeg = float.NaN;
-    bool _hasPitch;
+    float _latestRollDeg = float.NaN;
+    bool _hasRoll;
 
     public bool IsConnected
     {
@@ -103,25 +103,25 @@ public class BraceTcpClient : MonoBehaviour
         }
     }
 
-    /// <summary>Latest MPU6050 pitch (degrees, tilt vs ground) from the UNO Q, or NaN if none yet.</summary>
-    public float LastPitchDeg
+    /// <summary>Latest MPU6050 roll (degrees, tilt vs ground) from the UNO Q, or NaN if none yet.</summary>
+    public float LastRollDeg
     {
         get
         {
             lock (_gate)
             {
-                return _hasPitch ? _latestPitchDeg : float.NaN;
+                return _hasRoll ? _latestRollDeg : float.NaN;
             }
         }
     }
 
-    public bool HasPitch
+    public bool HasRoll
     {
         get
         {
             lock (_gate)
             {
-                return _hasPitch;
+                return _hasRoll;
             }
         }
     }
@@ -156,7 +156,7 @@ public class BraceTcpClient : MonoBehaviour
     {
         connected = IsConnected;
         lastElbowAngleDeg = LastElbowAngleDeg;
-        lastPitchDeg = LastPitchDeg;
+        lastRollDeg = LastRollDeg;
         if (!connected)
             lastError = string.IsNullOrEmpty(lastError) ? "not connected" : lastError;
 
@@ -352,7 +352,7 @@ public class BraceTcpClient : MonoBehaviour
         if (string.IsNullOrEmpty(line))
             return;
 
-        // Protocol from python/main.py: "angleDeg=90.0" / "pitchDeg=12.3"
+        // Protocol from python/main.py: "angleDeg=90.0" / "rollDeg=12.3"
         if (TryParsePrefixedFloat(line, "angleDeg=", out float angleDeg))
         {
             lock (_gate)
@@ -363,12 +363,12 @@ public class BraceTcpClient : MonoBehaviour
             return;
         }
 
-        if (TryParsePrefixedFloat(line, "pitchDeg=", out float pitchDeg))
+        if (TryParsePrefixedFloat(line, "rollDeg=", out float rollDeg))
         {
             lock (_gate)
             {
-                _latestPitchDeg = pitchDeg;
-                _hasPitch = true;
+                _latestRollDeg = rollDeg;
+                _hasRoll = true;
             }
         }
     }

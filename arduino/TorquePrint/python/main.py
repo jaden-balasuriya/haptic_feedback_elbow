@@ -10,7 +10,7 @@ UNO Q hotspot):
 
   MCU → Quest: elbow angle from pot on A0
                Bridge.call("get_elbow_angle") → "angleDeg=90.0\\n"
-               Bridge.call("get_pitch_deg") → "pitchDeg=12.3\\n"
+               Bridge.call("get_roll_deg") → "rollDeg=12.3\\n"
 
 Run on the UNO Q after setup_hotspot.sh (App Lab Run, or docker / SSH):
   python3 main.py
@@ -31,13 +31,13 @@ LISTEN_PORT = 7777
 
 ANGLE_HZ = 10.0
 ANGLE_SEND_EPS = 0.25  # degrees; also send on change
-PITCH_SEND_EPS = 0.25
+ROLL_SEND_EPS = 0.25
 
 _pending_force: "queue.Queue[str]" = queue.Queue(maxsize=64)
 _outbound: "queue.Queue[str]" = queue.Queue(maxsize=64)
 _quest_connected = threading.Event()
 _last_sent_angle: float | None = None
-_last_sent_pitch: float | None = None
+_last_sent_roll: float | None = None
 _last_angle_poll_t = 0.0
 
 
@@ -148,7 +148,7 @@ def tcp_server_loop() -> None:
 
 
 def _maybe_queue_sensors() -> None:
-    global _last_sent_angle, _last_sent_pitch, _last_angle_poll_t
+    global _last_sent_angle, _last_sent_roll, _last_angle_poll_t
 
     if not _quest_connected.is_set():
         return
@@ -176,24 +176,24 @@ def _maybe_queue_sensors() -> None:
     _last_sent_angle = angle
 
     try:
-        pitch = float(Bridge.call("get_pitch_deg"))
+        roll = float(Bridge.call("get_roll_deg"))
     except Exception as exc:
-        print(f"[TorqueTCP] get_pitch_deg failed: {exc}")
+        print(f"[TorqueTCP] get_roll_deg failed: {exc}")
         return
 
-    pitch_line = f"pitchDeg={pitch:.1f}"
-    pitch_changed = (
-        _last_sent_pitch is None
-        or abs(pitch - _last_sent_pitch) >= PITCH_SEND_EPS
+    roll_line = f"rollDeg={roll:.1f}"
+    roll_changed = (
+        _last_sent_roll is None
+        or abs(roll - _last_sent_roll) >= ROLL_SEND_EPS
     )
-    _enqueue_outbound(pitch_line)
-    if pitch_changed:
-        print(f"[TorqueTCP] queued {pitch_line}")
-    _last_sent_pitch = pitch
+    _enqueue_outbound(roll_line)
+    if roll_changed:
+        print(f"[TorqueTCP] queued {roll_line}")
+    _last_sent_roll = roll
 
 
 def bridge_pump() -> None:
-    """Forward queued force lines and poll pot angle + pitch for Quest."""
+    """Forward queued force lines and poll pot angle + roll for Quest."""
     try:
         while True:
             line = _pending_force.get_nowait()
